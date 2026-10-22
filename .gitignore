@@ -1,0 +1,12 @@
+node_modules
+out
+dist
+assets-gen/music-raw
+*.log
+assets-gen/photos
+assets-gen/test
+assets-gen/music
+e2e/shots
+e2e/gallery
+e2e/batch-data
+e2e/batch-out
