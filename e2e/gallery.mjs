@@ -19,9 +19,9 @@ const ids = ['wedding-white', 'wedding-star', 'chinese-red', 'minimal', 'fashion
 for (const aspect of aspects) {
   for (const id of ids) {
     const urls = await page.evaluate(([i, a]) => window.__mvDebug.sceneFrames(i, a), [id, aspect])
-    const dir = join(OUT, 'tmp')
+    const dir = join(OUT, 'frames', `${id}_${aspect.replace(':', 'x')}`)
     rmSync(dir, { recursive: true, force: true })
-    mkdirSync(dir)
+    mkdirSync(dir, { recursive: true })
     urls.forEach((u, k) => writeFileSync(join(dir, `${String(k).padStart(3, '0')}.jpg`), Buffer.from(u.split(',')[1], 'base64')))
     const cols = aspect === '9:16' ? 8 : 5
     const rows = Math.ceil(urls.length / cols)
