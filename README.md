@@ -8,6 +8,8 @@
 
 Electron · React · WebGL2 · WebCodecs · MediaPipe
 
+[⬇ 下载 macOS 版](https://github.com/DCdafan/mv/releases/latest)
+
 <img src="docs/images/demo.gif" height="360" alt="婚纱成片演示" />&nbsp;<img src="docs/images/demo-bakery.gif" height="360" alt="蛋糕店成片演示" />
 
 <sub>软件直接导出的成片片段：左为婚纱「纯白誓言」模板（横屏），右为蛋糕店「甜蜜烘焙」模板（竖屏，品名和价格取自照片文件名）</sub>
@@ -209,6 +211,12 @@ Electron · React · WebGL2 · WebCodecs · MediaPipe
 | 批量出片（4 位客户 × 12 张，720p） | 17 秒 |
 
 ## 安装与运行
+
+### 直接下载
+
+**[下载 macOS 安装包（Apple 芯片）](https://github.com/DCdafan/mv/releases/latest)**：打开 Releases 页面下载 `ShiguangMV-x.x.x-arm64.dmg`。安装包未签名，首次打开请在「应用程序」里右键 →「打开」。
+
+### 从源码运行
 
 需要 Node.js 20+。
 
