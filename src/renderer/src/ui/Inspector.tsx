@@ -8,6 +8,8 @@ import { TRANSITIONS, transitionLabel } from '../engine/transitions'
 import { retime, newSceneId } from '../arrange/arranger'
 import { thumbUrl, Switch, Seg, fmtTime } from './common'
 import { AspectPicker } from './Wizard'
+import { styleTextKeys } from '../templates/styles'
+import { autoText, splitKey, TEXT_LABEL } from '../engine/textkeys'
 import type { Pace } from '@shared/types'
 
 export function Inspector({ project }: { project: Project }): JSX.Element {
@@ -111,6 +113,8 @@ function SceneInspector({ project, scene }: { project: Project; scene: Scene }):
   const beat = project.music?.analysis ? 60 / project.music.analysis.bpm : 0.6
   const [focusSlot, setFocusSlot] = useState<number | null>(null)
   const isLast = idx === project.scenes.length - 1
+  const brand = useApp((s) => s.settings?.brand ?? null)
+  const textKeys = styleTextKeys(style, tpl.palette, tpl.fonts)
   const sameSlotStyles = tpl.styles.filter((s) => s.slots.length === style.slots.length)
   const otherStyles = tpl.styles.filter((s) => s.slots.length !== style.slots.length)
 
@@ -288,26 +292,53 @@ function SceneInspector({ project, scene }: { project: Project; scene: Scene }):
         </>
       )}
 
-      {scene.kind === 'photo' && style.captionKey && (
+      {scene.kind === 'photo' && textKeys.length > 0 && (
         <>
           <div className="panel-title small" style={{ marginTop: 6 }}>
-            <Type size={14} /> 字幕
+            <Type size={14} /> 文字
           </div>
-          <textarea className="textarea" placeholder="留空则不显示字幕" value={scene.texts?.caption ?? ''} onChange={(e) => upd((s) => ({ ...s, texts: { ...s.texts, caption: e.target.value } }), 'cap-' + scene.id)} />
-          <div className="row" style={{ flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-            {tpl.captions.slice(0, 6).map((c) => (
-              <button key={c} className="btn sm" style={{ fontSize: 11 }} onClick={() => upd((s) => ({ ...s, texts: { ...s.texts, caption: c } }))}>
-                {c}
-              </button>
-            ))}
-          </div>
+          {textKeys.map(({ key, def }) => {
+            const { base, slot } = splitKey(key)
+            const auto = autoText(key, scene, project, brand) ?? def
+            const label = TEXT_LABEL[base] + (textKeys.filter((k) => splitKey(k.key).base === base).length > 1 ? ` ${slot + 1}` : '')
+            const val = scene.texts?.[key]
+            return (
+              <div className="field" key={key}>
+                <label className="row">
+                  <span className="grow">{label}</span>
+                  {val !== undefined && auto && (
+                    <button className="btn sm ghost" style={{ height: 20, fontSize: 11 }} onClick={() => upd((s) => { const t = { ...s.texts }; delete t[key]; return { ...s, texts: t } })}>
+                      恢复自动
+                    </button>
+                  )}
+                </label>
+                {base === 'caption' ? (
+                  <textarea className="textarea" placeholder="留空则不显示" value={val ?? auto} onChange={(e) => upd((s) => ({ ...s, texts: { ...s.texts, [key]: e.target.value } }), 'txt-' + scene.id + key)} />
+                ) : (
+                  <input className="input" placeholder={base === 'price' ? '例如 ¥128，留空则隐藏价格' : '留空则不显示'} value={val ?? auto} onChange={(e) => upd((s) => ({ ...s, texts: { ...s.texts, [key]: e.target.value } }), 'txt-' + scene.id + key)} />
+                )}
+                {base === 'caption' && (
+                  <div className="row" style={{ flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+                    {tpl.captions.slice(0, 6).map((c) => (
+                      <button key={c} className="btn sm" style={{ fontSize: 11 }} onClick={() => upd((s) => ({ ...s, texts: { ...s.texts, [key]: c } }))}>
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          {textKeys.some((k) => ['product', 'price'].includes(splitKey(k.key).base)) && (
+            <div className="muted tiny">品名和价格默认取自照片文件名（如「草莓蛋糕-128.jpg」），在这里修改只影响当前场景。</div>
+          )}
         </>
       )}
       {scene.kind !== 'photo' && (
         <>
           <div className="divider" />
           <MetaFields project={project} />
-          {scene.kind === 'outro' && <div className="muted tiny">影楼名称、电话在首页「品牌设置」里填写，会自动出现在片尾。</div>}
+          {scene.kind === 'outro' && <div className="muted tiny">店铺名称、地址、电话在首页「品牌设置」里填写，会自动出现在片尾。</div>}
         </>
       )}
     </div>

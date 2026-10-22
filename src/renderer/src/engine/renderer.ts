@@ -11,6 +11,7 @@ import { evalLayer, photoUvRect, resolveMotion } from './anim'
 import { clamp, parseColor, strHash } from './math'
 import type { BgFill, Grade, Layer, MaskType, ParticleConfig, PhotoLayer, SceneStyle, Template, TextLayer } from './types'
 import { DEFAULT_GRADE } from './types'
+import { autoText } from './textkeys'
 
 const MASK_ID: Record<MaskType, number> = { rect: 0, round: 1, ellipse: 2, heart: 3, arch: 4, diamond: 5, hexagon: 6, circle: 7 }
 const PATTERN_ID = { paper: 0, dots: 1, grid: 2, lines: 3, film: 4 }
@@ -335,7 +336,13 @@ export class Renderer {
     gl.clear(gl.COLOR_BUFFER_BIT)
     const layers = this.layersFor(scene)
     if (!layers.length || layers[0].type !== 'bg') this.drawBg({ kind: 'template' }, scene, { x: 0, y: 0, w: 1, h: 1 }, 1, null)
+    const textByKey = new Map(layers.filter((l): l is TextLayer => l.type === 'text' && !!l.key).map((l) => [l.key!, l]))
     layers.forEach((layer, idx) => {
+      if (layer.showIf) {
+        // 用同一版式里对应 key 的文字图层判断（带默认文字，如丝带上的「本店招牌」）
+        const ref = (textByKey.get(layer.showIf) ?? { type: 'text', key: layer.showIf, text: '', rect: layer.rect, style: { font: 'Sans', size: 0, color: '' } }) as TextLayer
+        if (!this.resolveText(ref, scene).trim()) return
+      }
       const st = evalLayer(layer, lt, scene.duration, this.W, this.H)
       if (st.alpha <= 0.002) return
       switch (layer.type) {
@@ -566,29 +573,10 @@ export class Renderer {
   }
 
   resolveText(layer: TextLayer, scene: Scene): string {
-    const p = this.project!
     const key = layer.key
-    if (key && scene.texts && scene.texts[key] !== undefined) return scene.texts[key]
-    const brand = this.brand
-    switch (key) {
-      case 'title':
-        return p.meta.title
-      case 'subtitle':
-        return p.meta.subtitle
-      case 'date':
-        return p.meta.date
-      case 'ending':
-        return p.meta.ending
-      case 'studio':
-        return brand?.enabled ? brand.studioName : ''
-      case 'slogan':
-        return brand?.enabled ? brand.slogan : ''
-      case 'phone':
-        return brand?.enabled && brand.phone ? `预约热线  ${brand.phone}` : ''
-      case 'caption':
-        return ''
-    }
-    return layer.text
+    if (!key) return layer.text
+    if (scene.texts && scene.texts[key] !== undefined) return scene.texts[key]
+    return autoText(key, scene, this.project!, this.brand, this.photoMap) ?? layer.text
   }
 
   private drawText(layer: TextLayer, scene: Scene, st: ReturnType<typeof evalLayer>): void {

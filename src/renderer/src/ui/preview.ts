@@ -14,9 +14,33 @@ export const DEMO_PHOTOS: PhotoAsset[] = [
   { id: 'demo6', path: './demo/t05.jpg', name: 't05', width: 960, height: 640, orientation: 'landscape' }
 ]
 
+const bk = (n: number, name: string, price: string, land: boolean): PhotoAsset => ({
+  id: 'bk' + n,
+  path: `./demo/k0${n}.jpg`,
+  name,
+  width: land ? 960 : 640,
+  height: land ? 640 : 960,
+  orientation: land ? 'landscape' : 'portrait',
+  product: { name, price }
+})
+
+/** 蛋糕店模板的内置预览图（带品名和价格） */
+export const BAKERY_DEMO: PhotoAsset[] = [
+  bk(1, '草莓奶油蛋糕', '168', false),
+  bk(2, '马卡龙礼盒', '88', true),
+  bk(3, '抹茶慕斯', '36', true),
+  bk(4, '纸杯蛋糕', '15', true),
+  bk(5, '蓝莓芝士蛋糕', '42', false),
+  bk(6, '黄油可颂', '18', true)
+]
+
 export function previewProject(templateId: string, photos: PhotoAsset[], aspect: Aspect, seed = 7): Project {
   const tpl = getTemplate(templateId)
-  const use = (photos.filter((p) => !p.excluded).length >= 3 ? photos.filter((p) => !p.excluded) : DEMO_PHOTOS).slice(0, seed === 7 ? 12 : 40)
+  const mine = photos.filter((p) => !p.excluded)
+  // 蛋糕店模板：用户照片里没有商品信息时，用内置蛋糕图预览
+  const demo = tpl.industry === 'bakery' ? BAKERY_DEMO : DEMO_PHOTOS
+  const ok = mine.length >= 3 && (tpl.industry !== 'bakery' || mine.some((p) => p.product?.price))
+  const use = (ok ? mine : demo).slice(0, seed === 7 ? 12 : 40)
   const { scenes, musicOffset } = arrange({ photos: use, template: tpl, aspect, music: null, pace: tpl.pace, durationMode: 'photos', seed })
   return {
     version: 1,

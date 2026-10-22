@@ -89,3 +89,21 @@ describe('自动编排', () => {
     expect(removed[2].start).toBeCloseTo(removed[1].start + removed[1].duration)
   })
 })
+
+describe('蛋糕店模板', () => {
+  it('带品名的照片进产品版式，没有品名的照片不会进', () => {
+    const ph = photos(16).map((p, i) => (i % 4 === 3 ? p : { ...p, product: { name: '蛋糕' + i, price: String(20 + i) } }))
+    for (const id of ['bakery-sweet', 'bakery-promo', 'bakery-tea']) {
+      const tpl = TEMPLATES.find((t) => t.id === id)!
+      const { scenes } = arrange({ photos: ph, template: tpl, aspect: '9:16', music: music(110, 120), pace: tpl.pace, durationMode: 'photos', seed: 5 })
+      let productScenes = 0
+      for (const s of scenes.filter((x) => x.kind === 'photo')) {
+        const st = findStyle(tpl, s.styleId)
+        if (!st.needsProduct) continue
+        productScenes++
+        for (const pid of s.photos) expect(ph.find((p) => p.id === pid)!.product).toBeTruthy()
+      }
+      expect(productScenes).toBeGreaterThan(2)
+    }
+  })
+})

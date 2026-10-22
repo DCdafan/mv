@@ -17,7 +17,7 @@ import type {
 // ---------- 坐标工具 ----------
 
 export const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 }
-const shortSide = (c: BuildCtx): number => Math.min(c.W, c.H)
+export const shortSide = (c: BuildCtx): number => Math.min(c.W, c.H)
 /** 像素矩形 → 归一化矩形 */
 export const px = (c: BuildCtx, x: number, y: number, w: number, h: number): Rect => ({ x: x / c.W, y: y / c.H, w: w / c.W, h: h / c.H })
 /** 以中心点（像素）定义矩形 */
@@ -29,7 +29,7 @@ const photoAr = (c: BuildCtx, slot: number, fallback: 'landscape' | 'portrait'):
   return o === 'landscape' ? 3 / 2 : o === 'portrait' ? 2 / 3 : 1
 }
 /** 在 maxW x maxH 内按宽高比 ar 放最大的框 */
-const fit = (maxW: number, maxH: number, ar: number): [number, number] => (maxW / maxH > ar ? [maxH * ar, maxH] : [maxW, maxW / ar])
+export const fit = (maxW: number, maxH: number, ar: number): [number, number] => (maxW / maxH > ar ? [maxH * ar, maxH] : [maxW, maxW / ar])
 
 export const stagger = (base: AnimSpec, i: number, step = 0.18): AnimSpec => ({ ...base, delay: (base.delay ?? 0) + i * step })
 
@@ -53,7 +53,7 @@ export interface StyleOpt extends FrameOpt {
   bg?: BgFill
 }
 
-const photo = (slot: number, rect: Rect, f: FrameOpt = {}, extra: Partial<PhotoLayer> = {}): PhotoLayer => ({
+export const photo = (slot: number, rect: Rect, f: FrameOpt = {}, extra: Partial<PhotoLayer> = {}): PhotoLayer => ({
   type: 'photo',
   slot,
   rect,
@@ -644,11 +644,12 @@ export function outro(o: OutroOpt): SceneStyle {
       layers.push(text('ending', '', pxc(c, c.W / 2, c.H * 0.4, c.W - S * 0.16, eh), o.endStyle, { type: 'reveal', delay: 0.3, duration: 1.6 }))
       layers.push(text('title', '', pxc(c, c.W / 2, c.H * 0.4 + eh * 0.55 + o.smallStyle.size * S * 1.4, c.W - S * 0.2, o.smallStyle.size * S * 1.8), o.smallStyle, { type: 'fade', delay: 1.2, duration: 1 }))
       // 影楼品牌信息（未开启品牌时文字为空，自动隐藏）
-      const by = c.H * 0.8
+      const by = c.H * 0.76
       const bs: TextStyle = { ...o.smallStyle, size: o.smallStyle.size * 1.05, weight: 600, letterSpacing: 0.2 }
       layers.push(text('studio', '', pxc(c, c.W / 2, by, c.W - S * 0.2, bs.size * S * 1.8), bs, { type: 'slideUp', delay: 1.6, duration: 0.9 }))
       layers.push(text('slogan', '', pxc(c, c.W / 2, by + bs.size * S * 1.7, c.W - S * 0.2, bs.size * S * 1.6), { ...o.smallStyle, size: o.smallStyle.size * 0.85 }, { type: 'fade', delay: 1.9, duration: 0.9 }))
       layers.push(text('phone', '', pxc(c, c.W / 2, by + bs.size * S * 3.1, c.W - S * 0.2, bs.size * S * 1.6), { ...o.smallStyle, size: o.smallStyle.size * 0.8 }, { type: 'fade', delay: 2.1, duration: 0.9 }))
+      layers.push(text('address', '', pxc(c, c.W / 2, by + bs.size * S * 4.4, c.W - S * 0.2, bs.size * S * 1.6), { ...o.smallStyle, size: o.smallStyle.size * 0.8 }, { type: 'fade', delay: 2.3, duration: 0.9 }))
       if (o.decor) layers.push(...o.decor(c))
       return layers
     }
@@ -665,3 +666,19 @@ export const decorCenter = (c: BuildCtx, name: string, cx: number, cy: number, w
   ({ type: 'decor', decor: name, color, color2, rect: { x: (cx - w / 2) / c.W, y: (cy - (w * aspect) / 2) / c.H, w: w / c.W, h: 0 }, ...more }) as Layer
 
 export type { SlotSpec }
+
+/** 版式里可按场景编辑的文字（字幕、品名、价格、标签），供编辑器生成输入框 */
+export function styleTextKeys(style: SceneStyle, palette: BuildCtx['t'], fonts: BuildCtx['fonts']): { key: string; def: string }[] {
+  const keys = new Map<string, string>()
+  try {
+    const layers = style.build({ aspect: '16:9', W: 1920, H: 1080, ar: 16 / 9, seed: 1, dur: 4, rand: () => 0.5, t: palette, fonts, orient: style.slots.map(() => null) })
+    for (const l of layers) {
+      if (l.type !== 'text' || !l.key) continue
+      const base = l.key.split('@')[0]
+      if (['caption', 'product', 'price', 'tag'].includes(base) && !keys.has(l.key)) keys.set(l.key, l.text)
+    }
+  } catch {
+    /* 版式构建失败时不显示文字输入框 */
+  }
+  return [...keys.entries()].map(([key, def]) => ({ key, def }))
+}

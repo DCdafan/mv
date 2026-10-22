@@ -123,6 +123,7 @@ export type ParticleType =
   | 'goldDust'
   | 'leaves'
   | 'fireflies'
+  | 'sprinkles'
 
 export interface ParticleConfig {
   type: ParticleType
@@ -136,6 +137,8 @@ export interface ParticleConfig {
 
 interface LayerBase {
   key?: string
+  /** 只有这个文字 key 有内容时才显示（例如没有价格时隐藏价格贴纸） */
+  showIf?: string
   rect: Rect
   rotation?: number // 度
   opacity?: number
@@ -228,6 +231,8 @@ export interface SceneStyle {
   durationFactor?: number
   aspects?: Aspect[] // 不填表示全部支持
   captionKey?: boolean // 版式里有可编辑的字幕
+  /** 需要照片带商品价格（蛋糕店产品卡等），门店环境这类没价格的照片不会被分到这个版式 */
+  needsProduct?: boolean
   build: (ctx: BuildCtx) => Layer[]
 }
 
@@ -237,7 +242,7 @@ export interface TransitionChoice {
   beats?: number
 }
 
-export type TemplateCategory = '婚纱' | '中式' | '儿童' | '旅行' | '写真' | '家庭' | '毕业'
+export type TemplateCategory = '婚纱' | '中式' | '儿童' | '旅行' | '写真' | '家庭' | '毕业' | '烘焙'
 
 export interface Template {
   id: string
@@ -260,4 +265,8 @@ export interface Template {
   captions: string[]
   defaults: { title: string; subtitle: string; ending: string }
   coverColors: [string, string]
+  /** 推荐画幅（蛋糕店模板默认竖屏） */
+  defaultAspect?: Aspect
+  /** 行业：影响片尾电话前缀等文案 */
+  industry?: 'studio' | 'bakery'
 }

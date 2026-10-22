@@ -2,7 +2,7 @@
 import { _electron as electron } from 'playwright-core'
 import { join, resolve } from 'path'
 const ROOT = resolve('.')
-const OUT = join(ROOT, 'e2e/shots')
+const OUT = process.env.SHOTS || join(ROOT, 'e2e/shots')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const app = await electron.launch({ args: [join(ROOT, 'out/main/index.js')], env: { ...process.env, MV_USER_DATA: join(OUT, 'userdata') } })
 const page = await app.firstWindow()
@@ -15,9 +15,13 @@ await sleep(2000)
 await page.screenshot({ path: join(OUT, 'd02-editor.png') })
 // 选中第 5 个场景，展示属性面板
 const blocks = await page.$$('.timeline [draggable="true"]')
-await blocks[3].click()
+const pick = Number(process.env.PICK || 3)
+await blocks[pick].click()
 await sleep(1200)
 await page.screenshot({ path: join(OUT, 'd03-scene.png') })
+await page.evaluate(() => { const el = document.querySelector('.panel.right .panel-body'); if (el) el.scrollTop = el.scrollHeight })
+await sleep(400)
+await page.screenshot({ path: join(OUT, 'd03b-scene-text.png') })
 await page.click('.tabs button:has-text("转场")')
 await sleep(500)
 await page.screenshot({ path: join(OUT, 'd04-transitions.png') })

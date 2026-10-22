@@ -2,6 +2,7 @@
 import type { FaceBox, PhotoAnalysis, PhotoAsset, PhotoFlag } from '@shared/types'
 import { fileUrl } from '../engine/textures'
 import { strHash } from '../engine/math'
+import { parseProduct } from '../engine/textkeys'
 import exifr from 'exifr'
 import type { FaceLandmarker } from '@mediapipe/tasks-vision'
 
@@ -219,6 +220,7 @@ async function importOne(path: string, id: string): Promise<RawResult> {
     takenAt,
     proxy,
     thumb,
+    product: parseProduct(name),
     analysis: { sharpness: 0, brightness: bsum / total, faces, hash, score: 0, focus: { x: 0.5, y: 0.45 }, flags: [] }
   }
   return { asset, sharpRaw: sharp, brightness: bsum / total, clipHi: hi / total, clipLo: lo / total, saliency: { x: cx, y: cy } }

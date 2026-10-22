@@ -42,7 +42,7 @@ await app.evaluate(({ dialog }, f) => {
 await page.click('button:has-text("新建 MV")')
 await page.click('button:has-text("选择文件夹")')
 const t0 = Date.now()
-await page.waitForSelector('text=张有问题', { timeout: 120000 }).catch(() => {})
+await page.waitForSelector('text=已导入', { timeout: 120000 }).catch(() => {})
 await waitText(page, (t) => !t.includes('正在分析照片'), 120000)
 console.log('导入分析用时', ((Date.now() - t0) / 1000).toFixed(1), 's')
 await sleep(500)

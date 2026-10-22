@@ -44,6 +44,8 @@ export interface PhotoAsset {
   thumb?: string // 缩略图绝对路径（长边 360）
   analysis?: PhotoAnalysis
   excluded?: boolean
+  /** 商品信息（从文件名识别，如「草莓蛋糕-128.jpg」） */
+  product?: { name: string; price?: string }
 }
 
 export interface MusicAnalysis {
@@ -95,6 +97,8 @@ export interface BrandSettings {
   studioName: string
   slogan: string
   phone: string
+  phoneLabel?: string // 「预约热线」「订购热线」
+  address?: string
   logoPath?: string
   watermark: boolean
 }

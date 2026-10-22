@@ -4,7 +4,7 @@ import type { Project, MusicTrack } from '@shared/types'
 import { useApp, rearrange, usePlayback } from '../store/app'
 import { FLAG_LABEL, importPhotos, type ImportProgress } from '../analysis/photo'
 import { thumbUrl, Seg, fmtTime } from './common'
-import { TemplateCard, MusicList, ImportStatus } from './Wizard'
+import { TemplateCard, MusicList, ImportStatus, ProductLabel } from './Wizard'
 import { TEMPLATES } from '../templates'
 import { TRANSITIONS, transitionLabel } from '../engine/transitions'
 import { pickTransition, arrange, retime } from '../arrange/arranger'
@@ -143,6 +143,7 @@ function PhotoLibrary({ project }: { project: Project }): JSX.Element {
                 </span>
               ))}
             </div>
+            <ProductLabel p={p} />
             <div className="hover-ops">
               <button className="btn sm icon" title={p.excluded ? '恢复使用' : '不使用这张'} onClick={() => toggleExclude(p.id)}>
                 {p.excluded ? <Eye size={13} /> : <EyeOff size={13} />}

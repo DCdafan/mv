@@ -21,6 +21,16 @@ export function autoExclude(list: PhotoAsset[], on: boolean): PhotoAsset[] {
   return list.map((p) => ({ ...p, excluded: on ? !!p.analysis?.flags.some((f) => f === 'blur' || f === 'eyesClosed' || f === 'duplicate') : false }))
 }
 
+export function ProductLabel({ p }: { p: PhotoAsset }): JSX.Element | null {
+  if (!p.product) return null
+  return (
+    <div style={{ position: 'absolute', left: 0, right: 0, top: 0, padding: '3px 22px 8px 5px', fontSize: 10, background: 'linear-gradient(rgba(0,0,0,0.65), transparent)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      {p.product.name}
+      {p.product.price && <span style={{ color: 'var(--accent-2)', marginLeft: 4 }}>¥{p.product.price}</span>}
+    </div>
+  )
+}
+
 export function PhotoDrop({ onPaths, compact }: { onPaths: (paths: string[]) => void; compact?: boolean }): JSX.Element {
   const [over, setOver] = useState(false)
   return (
@@ -44,6 +54,11 @@ export function PhotoDrop({ onPaths, compact }: { onPaths: (paths: string[]) => 
       <div className="muted small" style={{ marginBottom: 14 }}>
         支持 JPG / PNG / WebP / HEIC，会自动识别模糊、闭眼、重复的照片
       </div>
+      {!compact && (
+        <div className="muted tiny" style={{ marginBottom: 14 }}>
+          蛋糕店小贴士：把照片命名为「品名-价格」，如 <b>草莓奶油蛋糕-168.jpg</b>，MV 里会自动显示品名和价格
+        </div>
+      )}
       <div className="row" style={{ justifyContent: 'center' }}>
         <button className="btn" onClick={async () => onPaths(await window.mv.openPhotos('files'))}>
           <ImagePlus size={15} /> 选择照片
@@ -236,9 +251,10 @@ export function Wizard({ onClose }: { onClose: () => void }): JSX.Element {
   const [busy, setBusy] = useState<string | null>(null)
   const { toast, openProject, refreshProjects } = useApp()
 
-  // 选模板时带出推荐音乐、节奏和默认文案
+  // 选模板时带出推荐音乐、节奏、画幅和默认文案
   useEffect(() => {
     const t = getTemplate(templateId)
+    if (t.defaultAspect) setAspect(t.defaultAspect)
     if (!musicTouched) setMusic(builtin.find((m) => m.path.endsWith(t.music)) ?? builtin[0] ?? null)
     setPace(t.pace)
     setMeta((m) => ({ ...m, title: t.defaults.title, subtitle: t.defaults.subtitle, ending: t.defaults.ending }))
@@ -251,6 +267,8 @@ export function Wizard({ onClose }: { onClose: () => void }): JSX.Element {
     setProgress(null)
     const all = sortPhotos([...photos, ...fresh], sortBy)
     setPhotos(autoExclude(all, autoEx))
+    // 大部分照片带价格（蛋糕店商品图）时，默认选蛋糕店模板
+    if (all.filter((p) => p.product?.price).length >= all.length / 2 && getTemplate(templateId).industry !== 'bakery') setTemplateId('bakery-sweet')
     if (!name && paths[0]) {
       const parts = paths[0].split(/[\\/]/)
       setName(parts[parts.length - 2] || '我的MV')
@@ -381,6 +399,7 @@ export function Wizard({ onClose }: { onClose: () => void }): JSX.Element {
                       </span>
                     ))}
                   </div>
+                  <ProductLabel p={p} />
                 </div>
               ))}
             </div>

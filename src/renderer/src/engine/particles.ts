@@ -14,7 +14,8 @@ export const CELL = {
   leaf: 8,
   bokeh: 9,
   glow: 10,
-  circle: 11
+  circle: 11,
+  sprinkle: 12
 }
 
 export function buildParticleAtlas(): HTMLCanvasElement {
@@ -144,6 +145,15 @@ export function buildParticleAtlas(): HTMLCanvasElement {
     g.arc(0, 0, 58, 0, Math.PI * 2)
     g.fill()
   })
+  cell(CELL.sprinkle, (g) => {
+    g.beginPath()
+    g.moveTo(-14, -46)
+    g.arc(0, -46, 14, Math.PI, 0)
+    g.lineTo(14, 46)
+    g.arc(0, 46, 14, 0, Math.PI)
+    g.closePath()
+    g.fill()
+  })
   return c
 }
 
@@ -160,7 +170,8 @@ const DEFAULT_SIZE: Record<ParticleType, [number, number]> = {
   sparkles: [0.015, 0.04],
   goldDust: [0.003, 0.008],
   leaves: [0.02, 0.04],
-  fireflies: [0.01, 0.025]
+  fireflies: [0.01, 0.025],
+  sprinkles: [0.012, 0.02]
 }
 
 /**
@@ -198,20 +209,24 @@ export function simulateParticles(
       case 'petals':
       case 'leaves':
       case 'snow':
-      case 'confetti': {
-        const fallV = (cfg.type === 'snow' ? 0.05 : cfg.type === 'confetti' ? 0.14 : 0.07) * (0.6 + r(2) * 0.8) * H * speed
+      case 'confetti':
+      case 'sprinkles': {
+        const fallV = (cfg.type === 'snow' ? 0.05 : cfg.type === 'confetti' ? 0.14 : cfg.type === 'sprinkles' ? 0.09 : 0.07) * (0.6 + r(2) * 0.8) * H * speed
         const span = H + 2 * m
         y = ((r(3) * span + fallV * t) % span) - m
         const sway = (cfg.type === 'snow' ? 0.02 : 0.045) * W
         x = r(4) * W + Math.sin(t * (0.4 + r(5) * 0.8) + r(6) * 6.28) * sway + t * W * 0.015 * (r(7) - 0.35) * speed
         x = ((x % (W + 2 * m)) + W + 2 * m) % (W + 2 * m) - m
-        rot = r(8) * 6.28 + t * (r(9) - 0.5) * (cfg.type === 'confetti' ? 6 : 1.6)
+        rot = r(8) * 6.28 + t * (r(9) - 0.5) * (cfg.type === 'confetti' ? 6 : cfg.type === 'sprinkles' ? 2.5 : 1.6)
         if (cfg.type === 'petals') {
           cell = CELL.petal
           sx = 0.45 + 0.55 * Math.abs(Math.cos(t * (0.8 + r(10) * 1.5) + r(11) * 6))
         } else if (cfg.type === 'leaves') {
           cell = CELL.leaf
           sx = 0.5 + 0.5 * Math.abs(Math.cos(t * (0.6 + r(10)) + r(11) * 6))
+        } else if (cfg.type === 'sprinkles') {
+          cell = CELL.sprinkle
+          sx = 0.9
         } else if (cfg.type === 'confetti') {
           cell = r(12) > 0.6 ? CELL.circle : CELL.confetti
           if (cell === CELL.circle) size *= 0.6

@@ -5,7 +5,7 @@ import { execFileSync } from 'child_process'
 import { join, resolve } from 'path'
 const ROOT = resolve('.')
 const OUT = join(ROOT, 'e2e/gallery')
-const DATA = join(ROOT, 'e2e/shots/userdata') // 复用 smoke 测试生成的项目
+const DATA = process.env.DATA || join(ROOT, 'e2e/shots/userdata') // 复用 smoke 测试生成的项目
 mkdirSync(OUT, { recursive: true })
 const aspects = (process.argv[2] || '16:9,9:16').split(',')
 const only = process.argv[3]
@@ -15,7 +15,7 @@ page.on('pageerror', (e) => console.log('[pageerror]', e.message)); page.on('con
 await page.waitForSelector('.proj', { timeout: 20000 })
 await page.click('.proj')
 await page.waitForSelector('.timeline')
-const ids = ['wedding-white', 'wedding-star', 'chinese-red', 'minimal', 'fashion', 'kids-fun', 'baby-diary', 'travel-diary', 'film-memory', 'graduation'].filter((x) => !only || only.split(',').includes(x))
+const ids = ['wedding-white', 'wedding-star', 'chinese-red', 'minimal', 'fashion', 'kids-fun', 'baby-diary', 'travel-diary', 'film-memory', 'graduation', 'bakery-sweet', 'bakery-promo', 'bakery-tea'].filter((x) => !only || only.split(',').includes(x))
 for (const aspect of aspects) {
   for (const id of ids) {
     const urls = await page.evaluate(([i, a]) => window.__mvDebug.sceneFrames(i, a), [id, aspect])

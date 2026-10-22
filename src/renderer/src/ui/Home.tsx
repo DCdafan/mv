@@ -48,27 +48,38 @@ export function BrandDialog({ onClose }: { onClose: () => void }): JSX.Element {
     >
       <div className="row" style={{ marginBottom: 14 }}>
         <div className="grow">
-          <b>在 MV 片尾显示影楼信息</b>
-          <div className="muted tiny">所有模板的片尾都会自动带上影楼名称、口号和预约电话</div>
+          <b>在 MV 片尾显示店铺信息</b>
+          <div className="muted tiny">所有模板的片尾都会自动带上店铺名称、口号、地址和电话</div>
         </div>
         <Switch on={b.enabled} onChange={(v) => setB({ ...b, enabled: v })} />
       </div>
       <div className="field">
-        <label>影楼 / 工作室名称</label>
-        <input className="input" value={b.studioName} placeholder="例如：拾光摄影工作室" onChange={(e) => setB({ ...b, studioName: e.target.value })} />
+        <label>影楼 / 店铺名称</label>
+        <input className="input" value={b.studioName} placeholder="例如：拾光摄影工作室、甜心烘焙坊" onChange={(e) => setB({ ...b, studioName: e.target.value })} />
       </div>
       <div className="field">
         <label>口号</label>
         <input className="input" value={b.slogan} placeholder="例如：用心记录每一份幸福" onChange={(e) => setB({ ...b, slogan: e.target.value })} />
       </div>
       <div className="field">
-        <label>预约电话</label>
-        <input className="input" value={b.phone} placeholder="例如：400-000-0000" onChange={(e) => setB({ ...b, phone: e.target.value })} />
+        <label>电话</label>
+        <div className="row">
+          <select className="select" style={{ width: 130 }} value={b.phoneLabel || '预约热线'} onChange={(e) => setB({ ...b, phoneLabel: e.target.value })}>
+            {['预约热线', '订购热线', '联系电话', '外卖热线'].map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+          <input className="input" value={b.phone} placeholder="例如：400-000-0000" onChange={(e) => setB({ ...b, phone: e.target.value })} />
+        </div>
+      </div>
+      <div className="field">
+        <label>门店地址</label>
+        <input className="input" value={b.address ?? ''} placeholder="例如：XX 路 88 号（选填）" onChange={(e) => setB({ ...b, address: e.target.value })} />
       </div>
       <div className="row" style={{ marginBottom: 14 }}>
         <div className="grow">
           <b>画面右下角水印</b>
-          <div className="muted tiny">全程显示影楼名称（半透明）</div>
+          <div className="muted tiny">全程显示店铺名称（半透明）</div>
         </div>
         <Switch on={b.watermark} onChange={(v) => setB({ ...b, watermark: v })} />
       </div>
@@ -95,7 +106,7 @@ export function BrandDialog({ onClose }: { onClose: () => void }): JSX.Element {
 function HeroArt(): JSX.Element {
   const [imgs, setImgs] = useState<string[]>([])
   useEffect(() => {
-    Promise.all(['wedding-white', 'kids-fun', 'chinese-red'].map((id) => templateThumb(id, DEMO_PHOTOS, '9:16', 'scene'))).then(setImgs)
+    Promise.all(['wedding-white', 'bakery-sweet', 'chinese-red'].map((id) => templateThumb(id, DEMO_PHOTOS, '9:16', 'scene'))).then(setImgs)
   }, [])
   return (
     <div className="hero-art">
@@ -119,7 +130,7 @@ export function Home(): JSX.Element {
           </div>
           拾光MV
         </div>
-        <span className="muted small">影楼 MV 电子相册 · 一键卡点成片</span>
+        <span className="muted small">影楼写真 · 蛋糕烘焙门店 · 一键卡点成片</span>
         <div className="grow" />
         <button className="btn sm no-drag" onClick={() => setShowExports(true)}>
           <Film size={14} /> 导出队列{active ? ` (${active})` : ''}
@@ -133,7 +144,8 @@ export function Home(): JSX.Element {
           <div style={{ maxWidth: 560 }}>
             <h1>导入照片，一键生成卡点 MV</h1>
             <p>
-              自动识别人脸与模糊、闭眼、重复照片，按音乐节拍编排版式与转场。
+              影楼客片、蛋糕甜品新品都能做：自动识别人脸与模糊、闭眼、重复照片，
+              从文件名识别品名和价格，按音乐节拍编排版式与转场。
               <br />
               {TEMPLATES.length} 套精选模板 · 26 种转场 · 横竖屏一键切换 · 4K 硬件加速导出
             </p>
@@ -173,8 +185,8 @@ export function Home(): JSX.Element {
               <Building2 size={20} />
             </div>
             <div>
-              <b>影楼品牌</b>
-              <span className="muted small">片尾 Logo 文字、电话与水印</span>
+              <b>店铺品牌</b>
+              <span className="muted small">片尾店名、地址、电话与水印</span>
             </div>
           </div>
         </div>

@@ -80,7 +80,7 @@ function assign(style: SceneStyle, queue: PhotoAsset[], aspect: Aspect): number[
     let found = -1
     for (let i = 0; i < window; i++) {
       if (used.includes(i)) continue
-      if (slotAccepts(spec, queue[i], aspect)) {
+      if (slotAccepts(spec, queue[i], aspect) && (!style.needsProduct || queue[i].product?.price)) {
         found = i
         break
       }
@@ -184,6 +184,8 @@ export function arrange(input: ArrangeInput): ArrangeResult {
           let w = c.style.weight ?? 1
           const [e0, e1] = c.style.energy ?? [0, 1]
           if (energy < e0 - 0.05 || energy > e1 + 0.05) w *= 0.3
+          // 带品名的照片优先放进产品版式（蛋糕店模板）
+          if (c.style.needsProduct) w *= 1.8
           if (recent[recent.length - 1] === c.style.id) w *= 0.08
           else if (recent.includes(c.style.id)) w *= 0.45
           // 多图版式在照片多、节奏快时更常出现
