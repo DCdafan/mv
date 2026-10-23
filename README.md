@@ -348,6 +348,10 @@ node e2e/gallery.mjs  # 渲染全部模板的每个场景，输出到 e2e/galler
 | 测试照片 64 张（含 16 张蛋糕） | AI 生成（`assets-gen/scripts`） | 仅供测试 |
 | 装饰素材 | 程序绘制（`engine/decor.ts`） | 本项目 |
 
+## 许可证
+
+本项目代码采用 [MIT 许可证](LICENSE)。随软件分发的第三方素材保留各自的授权：字体为 SIL OFL 1.1，人脸模型与 WASM 为 Apache 2.0，内置音乐为公有领域 / CC0（见上方「素材与授权」）。
+
 ## 路线图
 
 - [ ] Windows 安装包与代码签名

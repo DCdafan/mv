@@ -77,5 +77,6 @@
     "dmg": {
       "title": "拾光MV"
     }
-  }
+  },
+  "license": "MIT"
 }
