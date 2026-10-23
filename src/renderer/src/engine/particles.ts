@@ -1,6 +1,8 @@
 import type { ParticleConfig, ParticleType } from './types'
 import { hash01, parseColor } from './math'
 
+const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v)
+
 // 图集：4x4 格，每格 128px
 export const CELL = {
   petal: 0,
@@ -157,7 +159,7 @@ export function buildParticleAtlas(): HTMLCanvasElement {
   return c
 }
 
-const ADDITIVE: Set<ParticleType> = new Set(['bokeh', 'goldDust', 'fireflies', 'sparkles', 'stars'])
+const ADDITIVE: Set<ParticleType> = new Set(['bokeh', 'goldDust', 'fireflies', 'sparkles', 'stars', 'fireworks'])
 
 const DEFAULT_SIZE: Record<ParticleType, [number, number]> = {
   petals: [0.018, 0.035],
@@ -171,7 +173,8 @@ const DEFAULT_SIZE: Record<ParticleType, [number, number]> = {
   goldDust: [0.003, 0.008],
   leaves: [0.02, 0.04],
   fireflies: [0.01, 0.025],
-  sprinkles: [0.012, 0.02]
+  sprinkles: [0.012, 0.02],
+  fireworks: [0.006, 0.012]
 }
 
 /**
@@ -272,6 +275,44 @@ export function simulateParticles(
         rot = t * 0.5 + r(4) * 3
         cell = CELL.sparkle
         break
+      }
+      case 'fireworks': {
+        // 若干朵烟花轮流绽放：每个火花属于一朵，按周期重新随机位置和颜色
+        const bursts = 5
+        const b = i % bursts
+        const period = 2.4 / speed
+        const cyc = t / period + b / bursts
+        const k = Math.floor(cyc)
+        const u = (cyc - k) * period
+        const bh = (n2: number): number => hash01(seed + b * 7919 + k * 104729 + n2 * 31)
+        const bx = (0.12 + bh(1) * 0.76) * W
+        const by = (0.1 + bh(2) * 0.4) * H
+        const ang = r(2) * Math.PI * 2
+        const v = (0.18 + r(3) * 0.22) * S
+        const travel = v * (1 - Math.exp(-u * 2.2)) / 2.2
+        x = bx + Math.cos(ang) * travel
+        y = by + Math.sin(ang) * travel + 0.06 * S * u * u
+        const life = clamp01(1 - u / 1.8)
+        a *= Math.pow(life, 1.4) * (u < 0.05 ? u / 0.05 : 1)
+        size *= 0.6 + life * 0.6
+        cell = CELL.glow
+        const colors2 = cfg.colors.map(parseColor)
+        const c2 = colors2[Math.floor(bh(3) * colors2.length) % colors2.length]
+        const o = offset + n * 11
+        const fa = a * c2[3]
+        out[o] = x
+        out[o + 1] = y
+        out[o + 2] = size
+        out[o + 3] = 0
+        out[o + 4] = c2[0] * fa
+        out[o + 5] = c2[1] * fa
+        out[o + 6] = c2[2] * fa
+        out[o + 7] = 0
+        out[o + 8] = cell
+        out[o + 9] = 1
+        out[o + 10] = 0
+        n++
+        continue
       }
       case 'bokeh':
       case 'goldDust':

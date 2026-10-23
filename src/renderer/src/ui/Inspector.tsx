@@ -8,6 +8,7 @@ import { TRANSITIONS, transitionLabel } from '../engine/transitions'
 import { retime, newSceneId } from '../arrange/arranger'
 import { thumbUrl, Switch, Seg, fmtTime } from './common'
 import { AspectPicker } from './Wizard'
+import { FILTERS, BEAT_FX_LABEL, type BeatFx } from '../engine/filters'
 import { styleTextKeys } from '../templates/styles'
 import { autoText, splitKey, TEXT_LABEL } from '../engine/textkeys'
 import type { Pace } from '@shared/types'
@@ -88,6 +89,28 @@ function ProjectInspector({ project }: { project: Project }): JSX.Element {
           ]}
           onChange={(v) => run({ durationMode: v }, '已重新编排')}
         />
+      </div>
+      <div className="field">
+        <label>滤镜</label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {FILTERS.map((f) => (
+            <button key={f.id} className={'btn sm' + ((project.settings.filter ?? 'template') === f.id ? ' primary' : '')} onClick={() => commit((p) => ({ ...p, settings: { ...p.settings, filter: f.id } }))}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <label>卡点特效（重拍时画面跳动）</label>
+        <select className="select" value={project.settings.beatFx ?? 'auto'} onChange={(e) => commit((p) => ({ ...p, settings: { ...p.settings, beatFx: e.target.value as BeatFx } }))}>
+          {(Object.keys(BEAT_FX_LABEL) as BeatFx[]).map((k) => (
+            <option key={k} value={k}>
+              {BEAT_FX_LABEL[k]}
+              {k === 'auto' ? `（${BEAT_FX_LABEL[getTemplate(project.templateId).beatFx ?? 'none']}）` : ''}
+            </option>
+          ))}
+        </select>
+        {!project.music && <div className="muted tiny">需要先添加音乐</div>}
       </div>
       <div className="row" style={{ marginBottom: 14 }}>
         <span className="grow">模板粒子特效（花瓣、星光等）</span>

@@ -39,6 +39,7 @@ export const weddingWhite: Template = {
     subStyle: ts('GreatVibes', 0.065, '#fff6ea', { shadow: { color: 'rgba(80,50,30,0.5)', blur: 0.3 } }),
     dateStyle: ts('PlayfairDisplay', 0.03, '#ffffff', { letterSpacing: 0.4 }),
     overlay: 'rgba(60,40,30,0.32)',
+    titleChar: { type: 'blur', delay: 0.4, stagger: 0.16, duration: 0.9 },
     decor: (c) => [decorCenter(c, 'flourish', c.W / 2, c.H * 0.3, S(c) * 0.5, '#ffffff', 0.125, { in: { type: 'spread', delay: 0.3, duration: 1.2 } })]
   }),
   outro: outro({
@@ -108,6 +109,7 @@ export const weddingStar: Template = {
     withPhoto: true,
     photoFrame: { shape: 'circle', border: { width: 0.006, color: '#e8c77d' } },
     titleStyle: goldText(0.1, { letterSpacing: 0.3 }),
+    titleChar: { type: 'fade', delay: 0.5, stagger: 0.22, duration: 1 },
     subStyle: ts('GreatVibes', 0.055, '#e8d6a8'),
     dateStyle: ts('PlayfairDisplay', 0.026, '#aab3d6', { letterSpacing: 0.5 }),
     decor: (c) => [{ type: 'particles', rect: { x: 0, y: 0, w: 1, h: 1 }, particles: { type: 'sparkles', count: 18, colors: ['#ffe8b0'], opacity: 1 } }]

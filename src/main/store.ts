@@ -18,7 +18,9 @@ const BUILTIN_MUSIC: { file: string; name: string }[] = [
   { file: 'summer-sunday.mp3', name: '夏日星期天' },
   { file: 'apple-cider.mp3', name: '苹果汽水' },
   { file: 'happy-lullaby.mp3', name: '快乐摇篮曲' },
-  { file: 'childrens-march.mp3', name: '童趣进行曲' }
+  { file: 'childrens-march.mp3', name: '童趣进行曲' },
+  { file: 'jingle-bells.mp3', name: '铃儿响叮当 · 美国空军乐队' },
+  { file: 'happy-birthday.mp3', name: '生日快乐歌' }
 ]
 
 export class Store {

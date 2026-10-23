@@ -5,6 +5,23 @@ import { getTemplate } from '../templates'
 import { previewProject } from './preview'
 import { loadAllFonts } from '../engine/text'
 import { useApp } from '../store/app'
+import { Program } from '../engine/gl'
+import { FULL_VS } from '../engine/shaders'
+import { TRANSITIONS, transitionFragment } from '../engine/transitions'
+
+/** 编译全部转场着色器，返回失败的转场及错误 */
+function checkTransitions(): string[] {
+  const gl = document.createElement('canvas').getContext('webgl2')!
+  const errors: string[] = []
+  for (const t of TRANSITIONS) {
+    try {
+      new Program(gl, FULL_VS, transitionFragment(t))
+    } catch (e) {
+      errors.push(`${t.name}: ${String((e as Error).message).split('\n')[0]}`)
+    }
+  }
+  return errors
+}
 
 async function sceneFrames(templateId: string, aspect: Aspect, seed = 11): Promise<string[]> {
   await loadAllFonts()
@@ -27,4 +44,4 @@ async function sceneFrames(templateId: string, aspect: Aspect, seed = 11): Promi
   return out
 }
 
-;(window as unknown as { __mvDebug: unknown }).__mvDebug = { sceneFrames }
+;(window as unknown as { __mvDebug: unknown }).__mvDebug = { sceneFrames, checkTransitions }

@@ -178,10 +178,13 @@ uniform float uVignette;
 uniform float uGrain;
 uniform float uLeak;
 uniform float uFade;
+uniform float uZoom;   // 卡点缩放脉冲
+uniform float uFlash;  // 卡点闪光
 out vec4 outColor;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 void main(){
-  vec3 c = texture(uTex, vUv).rgb;
+  vec3 c = texture(uTex, (vUv - 0.5) / (1.0 + uZoom) + 0.5).rgb;
+  c += vec3(uFlash);
   if (uLeak > 0.0) {
     float t = uTime * 0.15;
     vec2 a = vec2(0.15 + 0.25 * sin(t * 1.3), 0.8 + 0.15 * cos(t * 0.9));

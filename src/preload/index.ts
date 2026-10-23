@@ -23,6 +23,7 @@ const api = {
   openImage: (): Promise<string | null> => ipcRenderer.invoke('dialog:openImage'),
   openFolder: (title?: string): Promise<string | null> => ipcRenderer.invoke('dialog:openFolder', title),
   saveVideo: (name: string): Promise<string | null> => ipcRenderer.invoke('dialog:saveVideo', name),
+  saveImage: (name: string, data: ArrayBuffer): Promise<string | null> => ipcRenderer.invoke('dialog:saveImage', name, data),
   listClientFolders: (root: string): Promise<{ name: string; path: string; photos: string[] }[]> =>
     ipcRenderer.invoke('fs:listClientFolders', root),
   cacheWrite: (name: string, data: ArrayBuffer): Promise<string> => ipcRenderer.invoke('cache:write', name, data),

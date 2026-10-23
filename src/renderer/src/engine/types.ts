@@ -124,6 +124,7 @@ export type ParticleType =
   | 'leaves'
   | 'fireflies'
   | 'sprinkles'
+  | 'fireworks'
 
 export interface ParticleConfig {
   type: ParticleType
@@ -177,10 +178,21 @@ export interface ShapeLayer extends LayerBase {
   shadow?: { blur: number; alpha: number; dx?: number; dy?: number; color?: string }
 }
 
+export type CharAnimType = 'pop' | 'drop' | 'rise' | 'fade' | 'typewriter' | 'wave' | 'zoom' | 'blur'
+
+/** 逐字动画：每个字依次入场 */
+export interface CharAnim {
+  type: CharAnimType
+  delay?: number // 第一个字开始的时间（秒）
+  stagger?: number // 相邻两个字的间隔（秒）
+  duration?: number // 每个字的动画时长（秒）
+}
+
 export interface TextLayer extends LayerBase {
   type: 'text'
   text: string
   style: TextStyle
+  charAnim?: CharAnim
 }
 
 export interface DecorLayer extends LayerBase {
@@ -242,7 +254,7 @@ export interface TransitionChoice {
   beats?: number
 }
 
-export type TemplateCategory = '婚纱' | '中式' | '儿童' | '旅行' | '写真' | '家庭' | '毕业' | '烘焙'
+export type TemplateCategory = '婚纱' | '中式' | '儿童' | '旅行' | '写真' | '家庭' | '毕业' | '烘焙' | '节日' | '宠物'
 
 export interface Template {
   id: string
@@ -265,6 +277,8 @@ export interface Template {
   captions: string[]
   defaults: { title: string; subtitle: string; ending: string }
   coverColors: [string, string]
+  /** 卡点特效：重拍时画面缩放脉冲 / 闪光 */
+  beatFx?: 'none' | 'pulse' | 'flash' | 'both'
   /** 推荐画幅（蛋糕店模板默认竖屏） */
   defaultAspect?: Aspect
   /** 行业：影响片尾电话前缀等文案 */

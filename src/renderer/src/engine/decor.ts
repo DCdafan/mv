@@ -1,6 +1,24 @@
 // 程序化绘制的装饰素材（无需额外图片资源，任意颜色、任意分辨率）
 import { fontFamily } from './text'
 
+const star5 = (g: CanvasRenderingContext2D, x: number, y: number, r: number): void => {
+  g.beginPath()
+  for (let i = 0; i < 10; i++) {
+    const rr = i % 2 ? r * 0.45 : r
+    const a = (i * Math.PI) / 5 - Math.PI / 2
+    g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr)
+  }
+  g.closePath()
+}
+
+/** 颜色加深一点，做立体感 */
+const shade = (c: string): string => {
+  if (!c.startsWith('#') || c.length < 7) return c
+  const n = parseInt(c.slice(1, 7), 16)
+  const f = (v: number): string => Math.round(v * 0.78).toString(16).padStart(2, '0')
+  return `#${f((n >> 16) & 255)}${f((n >> 8) & 255)}${f(n & 255)}`
+}
+
 type Draw = (g: CanvasRenderingContext2D, w: number, h: number, c: string, c2: string) => void
 
 interface DecorDef {
@@ -646,6 +664,193 @@ export const DECORS: Record<string, DecorDef> = {
       g.fillStyle = c
       g.beginPath()
       g.arc(w / 2, h / 2, w * 0.45, 0, Math.PI * 2)
+      g.fill()
+    }
+  },
+  xmasTree: {
+    label: '圣诞树',
+    w: 400,
+    h: 520,
+    draw: (g, w, h, c, c2) => {
+      g.fillStyle = '#7a4b2a'
+      g.fillRect(w * 0.44, h * 0.82, w * 0.12, h * 0.14)
+      g.fillStyle = c
+      for (const [y0, y1, hw] of [
+        [0.12, 0.42, 0.22],
+        [0.28, 0.62, 0.32],
+        [0.46, 0.84, 0.44]
+      ]) {
+        g.beginPath()
+        g.moveTo(w / 2, h * y0)
+        g.lineTo(w / 2 + w * hw, h * y1)
+        g.lineTo(w / 2 - w * hw, h * y1)
+        g.closePath()
+        g.fill()
+      }
+      const balls = ['#ff4d4d', '#ffd23f', '#4cc3ff', '#ffffff']
+      for (let i = 0; i < 12; i++) {
+        g.fillStyle = balls[i % balls.length]
+        g.beginPath()
+        g.arc(w * (0.32 + ((i * 37) % 36) / 100), h * (0.36 + ((i * 53) % 44) / 100), w * 0.025, 0, Math.PI * 2)
+        g.fill()
+      }
+      g.fillStyle = c2
+      star5(g, w / 2, h * 0.1, w * 0.08)
+      g.fill()
+    }
+  },
+  gift: {
+    label: '礼物盒',
+    w: 400,
+    h: 400,
+    draw: (g, w, h, c, c2) => {
+      g.fillStyle = c
+      g.fillRect(w * 0.12, h * 0.38, w * 0.76, h * 0.56)
+      g.fillStyle = shade(c)
+      g.fillRect(w * 0.06, h * 0.26, w * 0.88, h * 0.16)
+      g.fillStyle = c2
+      g.fillRect(w * 0.44, h * 0.26, w * 0.12, h * 0.68)
+      for (const s of [-1, 1]) {
+        g.beginPath()
+        g.ellipse(w / 2 + s * w * 0.13, h * 0.2, w * 0.13, h * 0.07, s * 0.5, 0, Math.PI * 2)
+        g.lineWidth = w * 0.045
+        g.strokeStyle = c2
+        g.stroke()
+      }
+    }
+  },
+  snowflake: {
+    label: '雪花',
+    w: 300,
+    h: 300,
+    draw: (g, w, h, c) => {
+      g.strokeStyle = c
+      g.lineWidth = w * 0.035
+      g.lineCap = 'round'
+      g.translate(w / 2, h / 2)
+      for (let i = 0; i < 6; i++) {
+        g.rotate(Math.PI / 3)
+        g.beginPath()
+        g.moveTo(0, 0)
+        g.lineTo(0, -h * 0.44)
+        for (const d of [0.18, 0.3]) {
+          g.moveTo(0, -h * d)
+          g.lineTo(-w * 0.09, -h * (d + 0.09))
+          g.moveTo(0, -h * d)
+          g.lineTo(w * 0.09, -h * (d + 0.09))
+        }
+        g.stroke()
+      }
+    }
+  },
+  fu: {
+    label: '福字',
+    w: 400,
+    h: 400,
+    draw: (g, w, h, c, c2) => {
+      g.translate(w / 2, h / 2)
+      g.rotate(Math.PI / 4)
+      g.fillStyle = c
+      g.fillRect(-w * 0.33, -h * 0.33, w * 0.66, h * 0.66)
+      g.strokeStyle = c2
+      g.lineWidth = w * 0.015
+      g.strokeRect(-w * 0.3, -h * 0.3, w * 0.6, h * 0.6)
+      g.rotate(-Math.PI / 4)
+      g.fillStyle = c2
+      g.font = `${h * 0.42}px ${fontFamily('MaShanZheng')}`
+      g.textAlign = 'center'
+      g.textBaseline = 'middle'
+      g.fillText('福', 0, h * 0.02)
+    }
+  },
+  firecracker: {
+    label: '鞭炮',
+    w: 200,
+    h: 500,
+    draw: (g, w, h, c, c2) => {
+      g.strokeStyle = c2
+      g.lineWidth = 4
+      g.beginPath()
+      g.moveTo(w / 2, 0)
+      g.lineTo(w / 2, h * 0.95)
+      g.stroke()
+      for (let i = 0; i < 8; i++) {
+        const y = h * (0.08 + i * 0.11)
+        const s = i % 2 ? 1 : -1
+        g.save()
+        g.translate(w / 2 + s * w * 0.12, y)
+        g.rotate(s * 0.5)
+        g.fillStyle = c
+        g.fillRect(-w * 0.09, -h * 0.045, w * 0.18, h * 0.09)
+        g.fillStyle = c2
+        g.fillRect(-w * 0.09, -h * 0.045, w * 0.18, h * 0.012)
+        g.fillRect(-w * 0.09, h * 0.033, w * 0.18, h * 0.012)
+        g.restore()
+      }
+    }
+  },
+  paw: {
+    label: '爪印',
+    w: 300,
+    h: 300,
+    draw: (g, w, h, c) => {
+      g.fillStyle = c
+      g.beginPath()
+      g.ellipse(w * 0.5, h * 0.66, w * 0.22, h * 0.19, 0, 0, Math.PI * 2)
+      g.fill()
+      for (const [x, y, r] of [
+        [0.24, 0.42, 0.09],
+        [0.4, 0.26, 0.095],
+        [0.6, 0.26, 0.095],
+        [0.76, 0.42, 0.09]
+      ]) {
+        g.beginPath()
+        g.ellipse(w * x, h * y, w * r, h * r * 1.2, 0, 0, Math.PI * 2)
+        g.fill()
+      }
+    }
+  },
+  bone: {
+    label: '骨头',
+    w: 400,
+    h: 160,
+    draw: (g, w, h, c) => {
+      g.fillStyle = c
+      g.fillRect(w * 0.2, h * 0.36, w * 0.6, h * 0.28)
+      for (const x of [0.16, 0.84]) {
+        for (const y of [0.32, 0.68]) {
+          g.beginPath()
+          g.arc(w * x, h * y, h * 0.2, 0, Math.PI * 2)
+          g.fill()
+        }
+      }
+    }
+  },
+  rose: {
+    label: '玫瑰',
+    w: 300,
+    h: 420,
+    draw: (g, w, h, c, c2) => {
+      g.strokeStyle = c2
+      g.lineWidth = 8
+      g.beginPath()
+      g.moveTo(w / 2, h * 0.4)
+      g.quadraticCurveTo(w * 0.42, h * 0.7, w / 2, h * 0.98)
+      g.stroke()
+      g.fillStyle = c2
+      g.beginPath()
+      g.ellipse(w * 0.36, h * 0.66, w * 0.12, h * 0.04, -0.6, 0, Math.PI * 2)
+      g.fill()
+      g.fillStyle = c
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2
+        g.beginPath()
+        g.ellipse(w / 2 + Math.cos(a) * w * 0.12, h * 0.26 + Math.sin(a) * h * 0.06, w * 0.16, h * 0.1, a, 0, Math.PI * 2)
+        g.fill()
+      }
+      g.fillStyle = shade(c)
+      g.beginPath()
+      g.arc(w / 2, h * 0.25, w * 0.1, 0, Math.PI * 2)
       g.fill()
     }
   },

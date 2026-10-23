@@ -109,6 +109,10 @@ export interface ProjectSettings {
   particles: boolean
   musicVolume: number
   fadeOut: number
+  /** 全局滤镜 id，默认 template（使用模板调色） */
+  filter?: string
+  /** 卡点特效，默认 auto（跟随模板） */
+  beatFx?: 'auto' | 'none' | 'pulse' | 'flash' | 'both'
 }
 
 export interface Project {

@@ -3,6 +3,7 @@ import { Plus, Layers, Building2, Copy, Trash2, Film, Sparkles, LayoutTemplate }
 import { useApp } from '../store/app'
 import { thumbUrl, fmtTime, Modal, Switch } from './common'
 import { getTemplate, TEMPLATES } from '../templates'
+import { TRANSITIONS } from '../engine/transitions'
 import { templateThumb, DEMO_PHOTOS } from './preview'
 
 function timeAgo(t: number): string {
@@ -147,7 +148,7 @@ export function Home(): JSX.Element {
               影楼客片、蛋糕甜品新品都能做：自动识别人脸与模糊、闭眼、重复照片，
               从文件名识别品名和价格，按音乐节拍编排版式与转场。
               <br />
-              {TEMPLATES.length} 套精选模板 · 26 种转场 · 横竖屏一键切换 · 4K 硬件加速导出
+              {TEMPLATES.length} 套精选模板 · {TRANSITIONS.length + 1} 种转场 · 横竖屏一键切换 · 4K 硬件加速导出
             </p>
             <div className="row">
               <button className="btn primary lg" onClick={() => setWizardOpen(true)}>

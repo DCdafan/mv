@@ -15,7 +15,8 @@ page.on('pageerror', (e) => console.log('[pageerror]', e.message)); page.on('con
 await page.waitForSelector('.proj', { timeout: 20000 })
 await page.click('.proj')
 await page.waitForSelector('.timeline')
-const ids = ['wedding-white', 'wedding-star', 'chinese-red', 'minimal', 'fashion', 'kids-fun', 'baby-diary', 'travel-diary', 'film-memory', 'graduation', 'bakery-sweet', 'bakery-promo', 'bakery-tea'].filter((x) => !only || only.split(',').includes(x))
+console.log('转场编译失败：', JSON.stringify(await page.evaluate(() => window.__mvDebug.checkTransitions())))
+const ids = ['wedding-white', 'wedding-star', 'chinese-red', 'minimal', 'fashion', 'kids-fun', 'baby-diary', 'travel-diary', 'film-memory', 'graduation', 'bakery-sweet', 'bakery-promo', 'bakery-tea', 'christmas', 'new-year', 'birthday', 'valentine', 'pets'].filter((x) => !only || only.split(',').includes(x))
 for (const aspect of aspects) {
   for (const id of ids) {
     const urls = await page.evaluate(([i, a]) => window.__mvDebug.sceneFrames(i, a), [id, aspect])

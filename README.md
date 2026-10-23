@@ -68,6 +68,13 @@ Electron · React · WebGL2 · WebCodecs · MediaPipe
 - 自研节拍追踪：频谱通量 → 自相关估计速度 → 动态规划节拍追踪 → 4/4 拍重拍 → 能量曲线
 - 场景切换对齐节拍，尽量落在小节线上；能量高的段落换片更快
 - 两种时长模式：按照片数量（音乐自动淡出）/ 跟随整首歌长度
+- 卡点特效：重拍时画面缩放脉冲 / 闪光（片头片尾自动关闭），可按模板默认或手动开关
+
+**动画与特效**
+- 逐字文字动画：弹出、落下、浮起、淡入、模糊聚焦、放大、打字机、波浪，标题和片尾寄语一个字一个字入场
+- 34 种 GLSL 转场：叠化、闪白、推拉、擦除、中开、斜向擦除、圆形 / 爱心 / 星形展开、圆点溶解、方格翻转、立方体、水墨、燃烧、扫光、旋转模糊、扭曲推进、故障等
+- 13 种粒子：花瓣、雪花、爱心、星光、光斑、气泡、彩纸、糖粒、金粉、萤火、烟花等
+- 9 种全局滤镜：模板默认、原片、清新、暖阳、日系、胶片、鲜艳、冷调、黑白
 
 **编辑器**
 - WebGL 实时预览，预览与导出使用同一套渲染代码，所见即所得
@@ -75,6 +82,7 @@ Electron · React · WebGL2 · WebCodecs · MediaPipe
 - 场景属性：切换版式（含不同张数的版式）、替换照片、点选画面焦点、按拍增减时长、选择转场与时长、编辑字幕
 - 一键换模板 / 换音乐 / 换画幅 / 换节奏，「换一换」重新随机编排
 - 撤销 / 重做、自动保存、快捷键（空格播放、⌘Z、⇧← → 跳场景、Delete 删除场景）
+- 导出封面图：把当前画面按成片分辨率存为 PNG，发朋友圈、抖音时当封面
 
 **导出**
 - 720p / 1080p / 2K / 4K，25 / 30 / 60 fps，三档画质
@@ -106,7 +114,7 @@ Electron · React · WebGL2 · WebCodecs · MediaPipe
 
 <sub>左：照片库（✓ 已使用、问题标记）· 中：实时预览 · 右：场景属性（版式、照片焦点、按拍调时长、转场）· 下：时间线（场景、转场、音乐波形与节拍刻度）</sub>
 
-| 转场面板（26 种） | 音乐面板（节拍信息、音量、起点、重新卡点） | 模板面板（一键切换） |
+| 转场面板（34 种） | 音乐面板（节拍信息、音量、起点、重新卡点） | 模板面板（一键切换） |
 |---|---|---|
 | ![转场](docs/images/editor-transitions.jpg) | ![音乐](docs/images/editor-music.jpg) | ![模板](docs/images/editor-templates.jpg) |
 
@@ -122,7 +130,7 @@ Electron · React · WebGL2 · WebCodecs · MediaPipe
 
 ## 模板
 
-13 套模板，覆盖婚纱、中式、写真、儿童、旅行、家庭、毕业、烘焙。每套模板包含片头、片尾和 6～12 种版式，自带配色、字体、调色、粒子特效、转场组合、推荐音乐和文案。
+18 套模板，覆盖婚纱、中式、写真、儿童、旅行、家庭、毕业、烘焙、节日、宠物。每套模板包含片头、片尾和 6～12 种版式，自带配色、字体、调色、粒子特效、转场组合、推荐音乐和文案。
 
 **片头**
 
@@ -151,6 +159,25 @@ Electron · React · WebGL2 · WebCodecs · MediaPipe
 | 甜蜜烘焙 | 烘焙 | 粉色波点、彩色糖粒、纸杯蛋糕与马卡龙、价格爆炸贴 | 夏日星期天 |
 | 新品上市 | 烘焙 | 红黄撞色促销风、价格爆炸贴、快节奏转场 | 苹果汽水 |
 | 法式下午茶 | 烘焙 | 奶油纸纹、鼠尾草绿与金色细线、衬线体菜单排版 | 晨景 |
+| 圣诞快乐 | 节日 | 墨绿与圣诞红、飘雪、圣诞树与礼物盒、逐字弹出标题 | 铃儿响叮当 |
+| 新春团圆 | 节日 | 中国红鎏金、福字鞭炮灯笼、夜空烟花、卡点闪光 | 四季·春 |
+| 生日派对 | 节日 | 紫色派对夜、气球彩纸、蛋糕蜡烛、脉冲加闪光 | 生日快乐歌 |
+| 告白时刻 | 婚纱 | 酒红夜色、爱心飘升、玫瑰与爱心相框、逐字浮现告白 | 月光 |
+| 萌宠日记 | 宠物 | 奶油黄波点、爪印与骨头、拍立得手写字幕 | 苹果汽水 |
+
+**节日与宠物模板**（下图测试照片为 AI 生成的宠物图）
+
+![节日与宠物模板](docs/images/festival-wide.jpg)
+
+![节日与宠物模板竖屏](docs/images/festival-portrait.jpg)
+
+**逐字动画**：标题一个字一个字弹出
+
+![逐字动画](docs/images/char-anim.jpg)
+
+**项目设置**：滤镜、卡点特效、粒子开关
+
+![项目设置](docs/images/editor-settings.jpg)
 
 每套模板所有场景的效果见 [模板图鉴](docs/模板图鉴.md)。
 
@@ -252,11 +279,11 @@ src/
       engine/             WebGL2 渲染引擎
         renderer.ts         场景、图层、转场、后期的总调度
         shaders.ts          图层着色器（遮罩 SDF、调色）、后期着色器
-        transitions.ts      26 种 GLSL 转场
+        transitions.ts      34 种 GLSL 转场
         particles.ts        确定性粒子系统
         anim.ts             入场 / 出场 / 循环动画、推拉摇移
         text.ts / decor.ts  文字排版、程序化装饰素材
-      templates/          版式库 styles.ts + 10 套模板
+      templates/          版式库 styles.ts + 18 套模板
       analysis/           节拍分析（Web Worker）、照片分析
       arrange/            自动编排
       ui/                 界面组件
@@ -321,6 +348,8 @@ export const myTemplate: Template = {
 | `productCard` / `productHero` | 产品卡 / 产品大图（`templates/bakery.ts`） | 1 |
 | `menuBoard` | 菜单板：三款产品带品名和价格 | 3 |
 
+文字图层可加 `charAnim: { type: 'pop', stagger: 0.12 }` 做逐字动画；模板可设 `beatFx: 'pulse' | 'flash' | 'both'` 开启卡点特效。
+
 文字图层的 `key` 决定内容来源：`title`、`subtitle`、`date`、`ending` 取项目信息；`studio`、`slogan`、`phone`、`address` 取店铺品牌；`product@0`、`price@0` 取第 1 张照片的品名和价格；`caption`、`tag` 可在编辑器里逐场景修改。图层加 `showIf: 'price@0'` 可以在没有价格时自动隐藏。
 
 改完后运行 `node e2e/gallery.mjs` 可以把每个模板的每个场景渲染成总览图，用来检查效果。
@@ -328,7 +357,7 @@ export const myTemplate: Template = {
 ## 测试
 
 ```bash
-npm test              # 单元测试：节拍分析、自动编排（13 套模板 × 3 种画幅）、文件名识别商品
+npm test              # 单元测试：节拍分析、自动编排（18 套模板 × 3 种画幅）、文件名识别商品
 npm run typecheck     # 类型检查
 npm run build         # 端到端测试前先构建
 node e2e/smoke.mjs    # 启动真实应用：导入 → 生成 → 预览 → 导出 1080p，并用 ffprobe 校验
@@ -342,10 +371,10 @@ node e2e/gallery.mjs  # 渲染全部模板的每个场景，输出到 e2e/galler
 
 | 素材 | 来源 | 授权 |
 |---|---|---|
-| 内置音乐 8 首 | Wikimedia Commons、OpenGameArt | 公有领域 / CC0，详见 [resources/music/LICENSES.md](resources/music/LICENSES.md) |
+| 内置音乐 10 首 | Wikimedia Commons、OpenGameArt | 公有领域 / CC0，详见 [resources/music/LICENSES.md](resources/music/LICENSES.md) |
 | 字体 10 款 | Google Fonts | SIL Open Font License 1.1 |
 | 人脸模型、WASM | Google MediaPipe | Apache 2.0 |
-| 测试照片 64 张（含 16 张蛋糕） | AI 生成（`assets-gen/scripts`） | 仅供测试 |
+| 测试照片 72 张（含 16 张蛋糕、8 张宠物） | AI 生成（`assets-gen/scripts`） | 仅供测试 |
 | 装饰素材 | 程序绘制（`engine/decor.ts`） | 本项目 |
 
 ## 许可证

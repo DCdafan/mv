@@ -72,6 +72,7 @@ export const kidsFun: Template = {
     withPhoto: true,
     photoFrame: { shape: 'circle', border: { width: 0.014, color: '#ffffff' } },
     titleStyle: kidTitle(0.12),
+    titleChar: { type: 'drop', delay: 0.4, stagger: 0.14, duration: 0.9 },
     subStyle: ts('Pacifico', 0.045, '#ff7a59'),
     dateStyle: ts('ZCOOLKuaiLe', 0.03, K.textSoft),
     titleAnim: { type: 'pop', delay: 0.5, duration: 0.8 },
@@ -194,6 +195,7 @@ export const travelDiary: Template = {
   intro: intro({
     id: 't-intro',
     titleStyle: hand(0.14, '#ffffff', { shadow: { color: 'rgba(0,0,0,0.5)', blur: 0.2 } }),
+    titleChar: { type: 'typewriter', delay: 0.5, stagger: 0.2 },
     subStyle: ts('Caveat', 0.06, '#fff3dd', { weight: 700 }),
     dateStyle: ts('Montserrat', 0.026, '#ffffff', { letterSpacing: 0.4, weight: 600 }),
     overlay: 'rgba(20,30,30,0.35)',
@@ -259,6 +261,7 @@ export const fashion: Template = {
   intro: intro({
     id: 'f-intro',
     titleStyle: bold(0.16, '#ffffff', { letterSpacing: 0.25 }),
+    titleChar: { type: 'zoom', delay: 0.3, stagger: 0.08, duration: 0.5 },
     subStyle: bold(0.03, '#e8283c', { letterSpacing: 0.6, weight: 600 }),
     dateStyle: ts('Montserrat', 0.022, '#bdbdbd', { letterSpacing: 0.5 }),
     overlay: 'rgba(0,0,0,0.45)',

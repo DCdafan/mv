@@ -5,13 +5,14 @@ import { LAYER_VS, LAYER_FS, FULL_VS, POST_FS, COPY_FS, PARTICLE_VS, PARTICLE_FS
 import { TRANSITION_MAP, transitionFragment } from './transitions'
 import { buildParticleAtlas, simulateParticles } from './particles'
 import { PhotoTextures, CanvasTextures, type TexInfo } from './textures'
-import { rasterizeText, loadFont, isFontLoaded } from './text'
+import { rasterizeText, loadFont, isFontLoaded, type TextRaster, type CharBox } from './text'
 import { decorCanvas, DECORS, clearDecorCache } from './decor'
 import { evalLayer, photoUvRect, resolveMotion } from './anim'
-import { clamp, parseColor, strHash } from './math'
+import { clamp, parseColor, strHash, EASE } from './math'
 import type { BgFill, Grade, Layer, MaskType, ParticleConfig, PhotoLayer, SceneStyle, Template, TextLayer } from './types'
 import { DEFAULT_GRADE } from './types'
 import { autoText } from './textkeys'
+import { FILTER_MAP } from './filters'
 
 const MASK_ID: Record<MaskType, number> = { rect: 0, round: 1, ellipse: 2, heart: 3, arch: 4, diamond: 5, hexagon: 6, circle: 7 }
 const PATTERN_ID = { paper: 0, dots: 1, grid: 2, lines: 3, film: 4 }
@@ -55,6 +56,8 @@ export class Renderer {
   private photoMap = new Map<string, PhotoAsset>()
   private layerCache = new Map<string, Layer[]>()
   private grade: Grade = DEFAULT_GRADE
+  private charBoxes = new Map<string, CharBox[]>()
+  private downbeats: number[] = []
   onNeedsRedraw?: () => void
 
   constructor(readonly canvas: HTMLCanvasElement | OffscreenCanvas, private opts: RendererOptions) {
@@ -137,7 +140,11 @@ export class Renderer {
     this.template = template
     this.brand = brand
     this.photoMap = new Map(project.photos.map((p) => [p.id, p]))
-    this.grade = { ...DEFAULT_GRADE, ...template.grade }
+    const f = FILTER_MAP.get(project.settings.filter ?? 'template')
+    this.grade = { ...DEFAULT_GRADE, ...(f?.grade ?? template.grade) }
+    // 卡点特效用的重拍时间（换算到视频时间轴）
+    const a = project.music?.analysis
+    this.downbeats = a ? a.downbeats.map((d) => d - project.musicOffset).filter((d) => d >= 0) : []
     // 字体是异步加载的：加载完后清掉用回退字体画的文字纹理再重画
     const fonts = [template.fonts.title, template.fonts.body, template.fonts.script, 'MaShanZheng' as const].filter(Boolean) as Parameters<typeof loadFont>[0][]
     const pending = fonts.filter((f) => !isFontLoaded(f))
@@ -244,10 +251,34 @@ export class Renderer {
       .f1('uGrain', this.template.post.grain)
       .f1('uLeak', this.template.post.leak)
       .f1('uFade', fade)
+    const fx = this.beatFx(t, a, b)
+    pp.f1('uZoom', fx.zoom).f1('uFlash', fx.flash)
     gl.bindVertexArray(this.quad)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     gl.bindTexture(gl.TEXTURE_2D, null)
     gl.enable(gl.BLEND)
+  }
+
+  /** 卡点特效强度：在最近一个重拍后快速衰减；片头片尾不加 */
+  private beatFx(t: number, a: number, b: number): { zoom: number; flash: number } {
+    const mode = this.project!.settings.beatFx && this.project!.settings.beatFx !== 'auto' ? this.project!.settings.beatFx : this.template!.beatFx ?? 'none'
+    if (mode === 'none' || !this.downbeats.length || a < 0) return { zoom: 0, flash: 0 }
+    const scenes = this.project!.scenes
+    if (scenes[a]?.kind !== 'photo' || (b >= 0 && scenes[b]?.kind !== 'photo')) return { zoom: 0, flash: 0 }
+    let lo = 0
+    let hi = this.downbeats.length - 1
+    if (t < this.downbeats[0]) return { zoom: 0, flash: 0 }
+    while (lo < hi) {
+      const m = (lo + hi + 1) >> 1
+      if (this.downbeats[m] <= t) lo = m
+      else hi = m - 1
+    }
+    const dt = t - this.downbeats[lo]
+    const k = Math.exp(-dt / 0.14)
+    return {
+      zoom: mode === 'pulse' || mode === 'both' ? 0.035 * k : 0,
+      flash: mode === 'flash' || mode === 'both' ? 0.22 * Math.exp(-dt / 0.08) : 0
+    }
   }
 
   /** 只渲染单个场景的某一帧（缩略图、模板预览用） */
@@ -356,7 +387,7 @@ export class Renderer {
           this.drawShape(layer, st)
           break
         case 'text':
-          this.drawText(layer, scene, st)
+          this.drawText(layer, scene, st, lt)
           break
         case 'decor':
           this.drawDecor(layer.decor, layer.color, layer.color2, layer.rect, st)
@@ -579,13 +610,18 @@ export class Renderer {
     return autoText(key, scene, this.project!, this.brand, this.photoMap) ?? layer.text
   }
 
-  private drawText(layer: TextLayer, scene: Scene, st: ReturnType<typeof evalLayer>): void {
+  private drawText(layer: TextLayer, scene: Scene, st: ReturnType<typeof evalLayer>, lt: number): void {
     const text = this.resolveText(layer, scene)
     if (!text.trim()) return
     const S = Math.min(this.W, this.H)
     const g = this.geom(layer.rect)
     const key = `t|${text}|${JSON.stringify(layer.style)}|${S}|${Math.round(g.w)}`
-    const info = this.canvasTex.get(key, () => rasterizeText(text, layer.style, S, g.w).canvas)
+    let raster: TextRaster | null = null
+    const info = this.canvasTex.get(key, () => {
+      raster = rasterizeText(text, layer.style, S, g.w)
+      this.charBoxes.set(key, raster.chars)
+      return raster.canvas
+    })
     const align = layer.style.align ?? 'center'
     const vAlign = layer.style.vAlign ?? 'middle'
     // rasterize 的四周带了 padding，按对齐方式把文字块放进矩形
@@ -600,7 +636,79 @@ export class Renderer {
     let cy = g.cy
     if (vAlign === 'top') cy = g.cy - g.h / 2 - padPx + info.h / 2
     else if (vAlign === 'bottom') cy = g.cy + g.h / 2 + padPx - info.h / 2
-    this.drawTexQuad(info, cx + st.dx, cy + st.dy, info.w, info.h, st, st.reveal)
+    cx += st.dx
+    cy += st.dy
+    const chars = this.charBoxes.get(key)
+    if (!layer.charAnim || !chars?.length) {
+      this.drawTexQuad(info, cx, cy, info.w, info.h, st, st.reveal)
+      return
+    }
+    // 逐字绘制：每个字从整段文字纹理里截一块，按自己的时间做动画
+    const ca = layer.charAnim
+    const delay = ca.delay ?? 0.3
+    const stagger = ca.stagger ?? Math.min(0.12, 1.2 / chars.length)
+    const dur = ca.duration ?? 0.6
+    const cos = Math.cos(st.rot)
+    const sin = Math.sin(st.rot)
+    const fs = layer.style.size * S
+    chars.forEach((b, i) => {
+      const raw = clamp((lt - delay - i * stagger) / dur)
+      let alpha = st.alpha
+      let sx = st.sx
+      let sy = st.sy
+      let ox = 0
+      let oy = 0
+      let rot = st.rot
+      switch (ca.type) {
+        case 'pop': {
+          const e = EASE.outBack(raw)
+          sx *= e
+          sy *= e
+          alpha *= clamp(raw * 3)
+          break
+        }
+        case 'zoom': {
+          const e = EASE.outCubic(raw)
+          sx *= 2.2 - 1.2 * e
+          sy *= 2.2 - 1.2 * e
+          alpha *= e
+          break
+        }
+        case 'drop':
+          oy = -(1 - EASE.outBounce(raw)) * fs * 1.6
+          alpha *= clamp(raw * 4)
+          break
+        case 'rise':
+          oy = (1 - EASE.outCubic(raw)) * fs * 0.7
+          alpha *= raw
+          break
+        case 'fade':
+          alpha *= EASE.inOutQuad(raw)
+          break
+        case 'blur':
+          sx *= 1 + (1 - raw) * 0.4
+          sy *= 1 + (1 - raw) * 0.4
+          alpha *= EASE.inOutQuad(raw)
+          rot += (1 - raw) * 0.3
+          break
+        case 'typewriter':
+          alpha *= raw > 0 ? 1 : 0
+          break
+        case 'wave':
+          alpha *= clamp(raw * 2)
+          oy = Math.sin(lt * 4 - i * 0.6) * fs * 0.08 * clamp(raw * 2)
+          break
+      }
+      if (alpha <= 0.002) return
+      const bw = b.x1 - b.x0
+      const bh = b.y1 - b.y0
+      // 字在文字块里的偏移，跟随整段文字的旋转和缩放
+      const lx = (b.x0 + bw / 2 - info.w / 2) * st.sx + ox
+      const ly = (b.y0 + bh / 2 - info.h / 2) * st.sy + oy
+      const px = cx + lx * cos - ly * sin
+      const py = cy + lx * sin + ly * cos
+      this.drawTexQuad(info, px, py, bw, bh, { sx: sx, sy: sy, rot, alpha }, 1, [b.x0 / info.w, b.y0 / info.h, bw / info.w, bh / info.h])
+    })
   }
 
   private drawDecor(name: string, color: string | undefined, color2: string | undefined, rect: { x: number; y: number; w: number; h: number }, st: ReturnType<typeof evalLayer>): void {
@@ -614,11 +722,21 @@ export class Renderer {
     this.drawTexQuad(info, cx + st.dx, cy + st.dy, w, h, st, 1)
   }
 
-  private drawTexQuad(info: TexInfo, cx: number, cy: number, w: number, h: number, st: { sx: number; sy: number; rot: number; alpha: number }, reveal: number): void {
+  private drawTexQuad(
+    info: TexInfo,
+    cx: number,
+    cy: number,
+    w: number,
+    h: number,
+    st: { sx: number; sy: number; rot: number; alpha: number },
+    reveal: number,
+    uv?: [number, number, number, number]
+  ): void {
     const gl = this.gl
     const prog = this.layerProg.use()
     this.resetLayerUniforms(prog)
     this.setCommon(prog, cx, cy, w, h, st)
+    if (uv) prog.f4('uUvRect', ...uv)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, info.tex)
     prog.i1('uMode', 0).f2('uSize', w + 4, h + 4).f1('uOpacity', st.alpha).f1('uReveal', reveal)

@@ -333,6 +333,106 @@ export const TRANSITIONS: TransitionDef[] = [
       float m = smoothstep(0.2, 0.8, p);
       return mix(a, b, m); }`
   }
+,
+  {
+    name: 'splitOpen',
+    label: '中开',
+    group: '推拉',
+    glsl: `${EASE}
+    vec4 transition(vec2 uv){
+      float p = ease(progress); float half_ = p * 0.5;
+      float d = abs(uv.x - 0.5);
+      if (d < half_) return getToColor((uv - 0.5) * (0.85 + 0.15 * p) + 0.5);
+      vec2 fu = vec2(uv.x < 0.5 ? uv.x + half_ : uv.x - half_, uv.y);
+      return getFromColor(fu) * (1.0 - p * 0.4); }`
+  },
+  {
+    name: 'diagonalWipe',
+    label: '斜向擦除',
+    group: '推拉',
+    glsl: `vec4 transition(vec2 uv){
+      float e = progress * 1.3 - 0.15; float d = (uv.x + uv.y) * 0.5;
+      float m = smoothstep(e - 0.07, e + 0.07, d);
+      return mix(getToColor(uv), getFromColor(uv), m); }`
+  },
+  {
+    name: 'directionalWarp',
+    label: '扭曲推进',
+    group: '特效',
+    glsl: `vec4 transition(vec2 uv){
+      vec2 v = normalize(vec2(-1.0, 1.0)); v /= abs(v.x) + abs(v.y);
+      float sm = 0.5; float d = v.x * 0.5 + v.y * 0.5;
+      float m = 1.0 - smoothstep(-sm, 0.0, v.x * uv.x + v.y * uv.y - (d - 0.5 + progress * (1.0 + sm)));
+      return mix(getFromColor((uv - 0.5) * (1.0 - m) + 0.5), getToColor((uv - 0.5) * m + 0.5), m); }`
+  },
+  {
+    name: 'spinBlur',
+    label: '旋转模糊',
+    group: '特效',
+    glsl: `vec4 transition(vec2 uv){
+      float a = sin(progress * 3.14159) * 0.35; float k = smoothstep(0.4, 0.6, progress);
+      vec2 q = (uv - 0.5) * vec2(ratio, 1.0); vec4 col = vec4(0.0);
+      for (float i = 0.0; i < 12.0; i++) {
+        float ang = (i / 11.0 - 0.5) * a + (progress - 0.5) * 0.6;
+        float s = sin(ang), c = cos(ang);
+        vec2 r = mat2(c, -s, s, c) * q / vec2(ratio, 1.0) + 0.5;
+        col += mix(getFromColor(r), getToColor(r), k);
+      }
+      return col / 12.0; }`
+  },
+  {
+    name: 'gridFlip',
+    label: '方格翻转',
+    group: '3D',
+    glsl: `vec4 transition(vec2 uv){
+      vec2 n = vec2(floor(6.0 * ratio + 0.5), 6.0);
+      vec2 cell = floor(uv * n); vec2 f = fract(uv * n);
+      float delay = (cell.x + cell.y) / (n.x + n.y) * 0.6;
+      float q = clamp((progress - delay) / 0.4, 0.0, 1.0);
+      float s = abs(cos(q * 3.14159));
+      float x = (f.x - 0.5) / max(s, 0.001) + 0.5;
+      if (x < 0.0 || x > 1.0) return vec4(0.06, 0.06, 0.07, 1.0);
+      vec2 suv = (cell + vec2(x, f.y)) / n;
+      return q > 0.5 ? getToColor(suv) : getFromColor(suv); }`
+  },
+  {
+    name: 'polkaDots',
+    label: '圆点溶解',
+    group: '形状',
+    glsl: `vec4 transition(vec2 uv){
+      vec2 q = uv * vec2(ratio, 1.0) * 10.0; vec2 f = fract(q) - 0.5;
+      float r = progress * 0.78;
+      float m = smoothstep(r + 0.04, r - 0.04, length(f));
+      return mix(getFromColor(uv), getToColor(uv), m); }`
+  },
+  {
+    name: 'starOpen',
+    label: '星形展开',
+    group: '形状',
+    glsl: `float sdStar5(vec2 p, float r, float rf){
+      const vec2 k1 = vec2(0.809016994375, -0.587785252292); const vec2 k2 = vec2(-k1.x, k1.y);
+      p.x = abs(p.x); p -= 2.0 * max(dot(k1, p), 0.0) * k1; p -= 2.0 * max(dot(k2, p), 0.0) * k2;
+      p.x = abs(p.x); p.y -= r;
+      vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
+      float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);
+      return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y); }
+    vec4 transition(vec2 uv){
+      vec2 q = (uv - 0.5) * vec2(ratio, 1.0);
+      float r = 0.001 + pow(progress, 1.5) * 2.4;
+      float m = smoothstep(-0.012, 0.012, sdStar5(q, r, 0.45));
+      return mix(getToColor(uv), getFromColor(uv), m); }`
+  },
+  {
+    name: 'lightSweep',
+    label: '扫光',
+    group: '特效',
+    glsl: `vec4 transition(vec2 uv){
+      float band = uv.x * 0.75 + (1.0 - uv.y) * 0.25; float pos = progress * 1.5 - 0.25;
+      float g = exp(-pow((band - pos) * 7.0, 2.0)) * sin(progress * 3.14159);
+      float m = smoothstep(pos + 0.03, pos - 0.03, band);
+      vec4 c = mix(getFromColor(uv), getToColor(uv), m);
+      return c + vec4(vec3(1.0, 0.95, 0.85) * g * 0.9, 0.0); }`
+  }
 ]
 
 export const TRANSITION_MAP = new Map(TRANSITIONS.map((t) => [t.name, t]))

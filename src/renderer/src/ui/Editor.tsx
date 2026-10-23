@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Undo2, Redo2, Shuffle, Download, Play, Pause, SkipBack, SkipForward, Film, Loader2, Maximize2 } from 'lucide-react'
+import { ChevronLeft, Undo2, Redo2, Shuffle, Download, Play, Pause, SkipBack, SkipForward, Film, Loader2, Maximize2, ImageDown } from 'lucide-react'
+import { ASPECT_SIZE } from '@shared/types'
+import { Renderer } from '../engine/renderer'
+import { loadAllFonts } from '../engine/text'
 import { projectDuration } from '@shared/types'
 import { useApp, usePlayback, rearrange } from '../store/app'
 import { Player } from './Player'
@@ -17,6 +20,34 @@ export function Editor(): JSX.Element | null {
   const [showExport, setShowExport] = useState(false)
   const [busy, setBusy] = useState(false)
   const [editName, setEditName] = useState(false)
+  const [coverBusy, setCoverBusy] = useState(false)
+
+  /** 按导出分辨率渲染当前画面，存为 PNG 封面 */
+  const exportCover = async (): Promise<void> => {
+    const proj = useApp.getState().project
+    if (!proj) return
+    setCoverBusy(true)
+    try {
+      const [w, h] = ASPECT_SIZE[proj.aspect]
+      const canvas = document.createElement('canvas')
+      const r = new Renderer(canvas, { maxTextureSize: 4096, useOriginals: true, preserveDrawingBuffer: true })
+      r.setSize(w, h)
+      r.setProject(proj, getTemplate(proj.templateId), settings?.brand ?? null)
+      await loadAllFonts()
+      const t = Math.max(0.7, usePlayback.getState().time)
+      await r.prepare(t, t + 0.1)
+      r.render(t)
+      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'))
+      r.dispose()
+      if (!blob) throw new Error('生成图片失败')
+      const out = await window.mv.saveImage(`${proj.name.replace(/[\\/:*?"<>|]/g, '_')}_封面.png`, await blob.arrayBuffer())
+      if (out) toast('封面已保存', 'success')
+    } catch (e) {
+      toast('导出封面失败：' + (e as Error).message, 'error')
+    } finally {
+      setCoverBusy(false)
+    }
+  }
 
   useEffect(() => {
     const h = (e: KeyboardEvent): void => {
@@ -155,6 +186,9 @@ export function Editor(): JSX.Element | null {
                 取消选中
               </button>
             )}
+            <button className="btn sm icon ghost" title="把当前画面导出为封面图（PNG）" disabled={coverBusy} onClick={exportCover}>
+              {coverBusy ? <Loader2 size={14} className="spin" /> : <ImageDown size={14} />}
+            </button>
             <button
               className="btn sm icon ghost"
               title="全屏预览"

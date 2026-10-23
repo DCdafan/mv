@@ -155,6 +155,18 @@ function registerIpc(): void {
     return r.canceled ? null : r.filePaths[0]
   })
 
+  ipcMain.handle('dialog:saveImage', async (_e, defaultName: string, data: ArrayBuffer) => {
+    const s = store.getSettings()
+    const r = await dialog.showSaveDialog(mainWindow!, {
+      title: '导出封面图',
+      defaultPath: join(s.outputDir, defaultName),
+      filters: [{ name: 'PNG 图片', extensions: ['png'] }]
+    })
+    if (r.canceled || !r.filePath) return null
+    await fsp.writeFile(r.filePath, Buffer.from(data))
+    return r.filePath
+  })
+
   ipcMain.handle('dialog:saveVideo', async (_e, defaultName: string) => {
     const s = store.getSettings()
     const r = await dialog.showSaveDialog(mainWindow!, {

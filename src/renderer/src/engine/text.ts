@@ -68,10 +68,19 @@ export function loadAllFonts(): Promise<void> {
   return Promise.all((Object.keys(FONT_FILES) as FontKey[]).map(loadFont)).then(() => undefined)
 }
 
+export interface CharBox {
+  x0: number
+  x1: number
+  y0: number
+  y1: number
+}
+
 export interface TextRaster {
   canvas: HTMLCanvasElement
   w: number
   h: number
+  /** 每个可见字符在画布上的范围（逐字动画用） */
+  chars: CharBox[]
 }
 
 /** 把文字按样式画到画布上。S：目标画布短边像素 */
@@ -129,6 +138,7 @@ export function rasterizeText(text: string, style: TextStyle, S: number, maxWidt
     fill = g
   }
 
+  const chars: CharBox[] = []
   lines.forEach((line, i) => {
     const y = pad + lh * i + lh / 2
     // letterSpacing 会在末尾多加一个间距，居中时补偿
@@ -152,6 +162,18 @@ export function rasterizeText(text: string, style: TextStyle, S: number, maxWidt
     }
     ctx.fillStyle = fill
     ctx.fillText(line, x, y)
+    // 记录每个字的位置：相邻字之间按测量边界切开，首尾和上下延伸到画布边缘（带上描边和阴影）
+    const glyphs = [...line]
+    const y0 = i === 0 ? 0 : y - lh / 2
+    const y1 = i === lines.length - 1 ? h : y + lh / 2
+    let prefix = ''
+    let prevX = x
+    glyphs.forEach((ch, k) => {
+      prefix += ch
+      const nx = x + measure.measureText(prefix).width - (k === glyphs.length - 1 && ls > 0 ? ls : 0)
+      if (ch.trim()) chars.push({ x0: k === 0 ? Math.max(0, prevX - pad) : prevX, x1: k === glyphs.length - 1 ? Math.min(w, nx + pad) : nx, y0, y1 })
+      prevX = nx
+    })
   })
-  return { canvas, w, h }
+  return { canvas, w, h, chars }
 }

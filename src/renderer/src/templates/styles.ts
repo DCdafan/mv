@@ -10,6 +10,7 @@ import type {
   SlotSpec,
   TextLayer,
   TextStyle,
+  CharAnim,
   FontKey,
   BgFill
 } from '../engine/types'
@@ -139,7 +140,7 @@ export function blurFrame(o: StyleOpt & { side?: 'center' | 'left' | 'right'; di
             : side === 'left'
               ? px(c, cx + w / 2 + S * 0.08, c.H * 0.25, c.W - (cx + w / 2) - S * 0.16, c.H * 0.5)
               : px(c, S * 0.08, c.H * 0.25, cx - w / 2 - S * 0.16, c.H * 0.5)
-        layers.push(text('caption', '', r, o.caption, { type: 'reveal', delay: 0.6, duration: 1.4 }))
+        layers.push(text('caption', '', r, o.caption, { type: 'reveal', delay: Math.min(0.6, c.dur * 0.12), duration: Math.min(1.4, c.dur * 0.35) }))
       }
       return withDecor(c, o, layers)
     }
@@ -187,7 +188,7 @@ export function shapeFrame(o: StyleOpt & { shape: MaskType; ring?: { color: stri
       layers.push(photo(0, pxc(c, cx, cy, w, h), { ...o, mask: o.shape }, { in: o.anim ?? { type: 'zoomIn', distance: 0.8, duration: 0.9 }, motionStrength: 0.7 }))
       if (o.caption) {
         const r = k === 'tall' ? px(c, S * 0.08, cy + h / 2 + S * 0.06, c.W - S * 0.16, S * 0.3) : px(c, cx + w / 2 + S * 0.06, c.H * 0.3, c.W - cx - w / 2 - S * 0.14, c.H * 0.4)
-        layers.push(text('caption', '', r, o.caption, { type: 'reveal', delay: 0.7, duration: 1.4 }))
+        layers.push(text('caption', '', r, o.caption, { type: 'reveal', delay: Math.min(0.7, c.dur * 0.12), duration: Math.min(1.4, c.dur * 0.35) }))
       }
       return withDecor(c, o, layers)
     }
@@ -580,6 +581,8 @@ export interface IntroOpt {
   decor?: (c: BuildCtx) => Layer[]
   bg?: BgFill
   titleAnim?: AnimSpec
+  /** 标题逐字动画（设置后代替 titleAnim） */
+  titleChar?: CharAnim
   photoFrame?: FrameOpt & { shape?: MaskType }
 }
 
@@ -608,7 +611,7 @@ export function intro(o: IntroOpt): SceneStyle {
       }
       const tY = withPhoto && o.photoFrame ? (k === 'tall' ? c.H * 0.62 : c.H * 0.72) : c.H * 0.44
       const titleH = o.titleStyle.size * S * 1.6
-      layers.push(text('title', '', pxc(c, c.W / 2, tY, c.W - S * 0.16, titleH), o.titleStyle, o.titleAnim ?? { type: 'spread', delay: 0.4, duration: 1.4 }))
+      layers.push(text('title', '', pxc(c, c.W / 2, tY, c.W - S * 0.16, titleH), o.titleStyle, o.titleChar ? undefined : o.titleAnim ?? { type: 'spread', delay: 0.4, duration: 1.4 }, o.titleChar ? { charAnim: o.titleChar } : {}))
       layers.push(text('subtitle', '', pxc(c, c.W / 2, tY + titleH * 0.5 + o.subStyle.size * S * 1.3, c.W - S * 0.2, o.subStyle.size * S * 1.8), o.subStyle, { type: 'slideUp', delay: 1.0, duration: 1 }))
       if (o.dateStyle) {
         layers.push(text('date', '', pxc(c, c.W / 2, tY + titleH * 0.5 + o.subStyle.size * S * 3.2 + o.dateStyle.size * S, c.W - S * 0.2, o.dateStyle.size * S * 1.8), o.dateStyle, { type: 'fade', delay: 1.5, duration: 1 }))
@@ -628,6 +631,8 @@ export interface OutroOpt {
   withPhoto?: boolean
   decor?: (c: BuildCtx) => Layer[]
   dim?: number
+  /** 寄语逐字动画 */
+  endChar?: CharAnim
 }
 
 export function outro(o: OutroOpt): SceneStyle {
@@ -641,7 +646,7 @@ export function outro(o: OutroOpt): SceneStyle {
       const S = shortSide(c)
       const layers: Layer[] = [bgLayer(withPhoto ? { kind: 'blurPhoto', slot: 0, dim: o.dim ?? 0.45 } : o.bg)]
       const eh = o.endStyle.size * S * 2.6
-      layers.push(text('ending', '', pxc(c, c.W / 2, c.H * 0.4, c.W - S * 0.16, eh), o.endStyle, { type: 'reveal', delay: 0.3, duration: 1.6 }))
+      layers.push(text('ending', '', pxc(c, c.W / 2, c.H * 0.4, c.W - S * 0.16, eh), o.endStyle, o.endChar ? undefined : { type: 'reveal', delay: 0.3, duration: 1.6 }, o.endChar ? { charAnim: o.endChar } : {}))
       layers.push(text('title', '', pxc(c, c.W / 2, c.H * 0.4 + eh * 0.55 + o.smallStyle.size * S * 1.4, c.W - S * 0.2, o.smallStyle.size * S * 1.8), o.smallStyle, { type: 'fade', delay: 1.2, duration: 1 }))
       // 影楼品牌信息（未开启品牌时文字为空，自动隐藏）
       const by = c.H * 0.76
