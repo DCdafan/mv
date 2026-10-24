@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import type { Aspect, ExportJob, MusicTrack, Pace, PhotoAsset, Project, ProjectSummary, Scene } from '@shared/types'
+import type { Aspect, ExportJob, MusicTrack, Pace, PhotoAsset, Project, ProjectSummary, Scene, CustomTemplate } from '@shared/types'
 import type { AppSettings } from '../../../preload/index'
-import { arrange, retime } from '../arrange/arranger'
+import { arrange, retime, carryEdits } from '../arrange/arranger'
+export { carryEdits }
 import { getTemplate } from '../templates'
 import { analyzeMusic } from '../analysis/music'
 
@@ -22,6 +23,7 @@ interface AppState {
   past: Project[]
   future: Project[]
   selectedSceneId: string | null
+  selectedOverlayId: string | null
   exports: ExportJob[]
   showExports: boolean
   toasts: Toast[]
@@ -37,6 +39,7 @@ interface AppState {
   undo: () => void
   redo: () => void
   selectScene: (id: string | null) => void
+  selectOverlay: (sceneId: string | null, overlayId: string | null) => void
   toast: (text: string, kind?: Toast['kind']) => void
   saveSettings: (patch: Partial<AppSettings>) => Promise<void>
   setWizardOpen: (v: boolean) => void
@@ -57,6 +60,7 @@ export const useApp = create<AppState>((set, get) => ({
   past: [],
   future: [],
   selectedSceneId: null,
+  selectedOverlayId: null,
   exports: [],
   showExports: false,
   toasts: [],
@@ -137,7 +141,8 @@ export const useApp = create<AppState>((set, get) => ({
     scheduleSave(next)
   },
 
-  selectScene: (id) => set({ selectedSceneId: id }),
+  selectScene: (id) => set({ selectedSceneId: id, selectedOverlayId: null }),
+  selectOverlay: (sceneId, overlayId) => set({ selectedSceneId: sceneId, selectedOverlayId: overlayId }),
 
   toast: (text, kind = 'info') => {
     const id = ++toastSeq
@@ -241,7 +246,10 @@ export async function rearrange(p: Project, patch: Partial<Pick<Project, 'templa
     if (next.meta.ending === oldTpl.defaults.ending) next.meta.ending = newTpl.defaults.ending
   }
   if (patch.aspect) next.aspect = patch.aspect
-  if (patch.music !== undefined) next.music = patch.music
+  if (patch.music !== undefined) {
+    next.music = patch.music
+    next.settings.musicOffsetLocked = false
+  }
   if (patch.seed !== undefined) next.seed = patch.seed
   if (patch.pace) next.settings.pace = patch.pace
   if (patch.durationMode) next.settings.durationMode = patch.durationMode
@@ -253,13 +261,64 @@ export async function rearrange(p: Project, patch: Partial<Pick<Project, 'templa
     music: next.music?.analysis ?? null,
     pace: next.settings.pace,
     durationMode: next.settings.durationMode,
-    seed: next.seed
+    seed: next.seed,
+    musicOffset: next.settings.musicOffsetLocked && next.music ? next.musicOffset : undefined
   })
-  next.scenes = scenes
+  next.scenes = carryEdits(p.scenes, scenes, !!patch.templateId && patch.templateId !== p.templateId)
   next.musicOffset = musicOffset
   return next
 }
 
+
 export function updateScene(p: Project, id: string, fn: (s: Scene) => Scene): Project {
   return { ...p, scenes: retime(p.scenes.map((s) => (s.id === id ? fn(s) : s))) }
+}
+
+/** 当前要编辑的场景：选中的场景，否则是播放头所在的场景 */
+export function targetScene(p: Project): Scene | undefined {
+  const sel = useApp.getState().selectedSceneId
+  const t = usePlayback.getState().time
+  return p.scenes.find((s) => s.id === sel) ?? p.scenes.find((s) => t >= s.start && t < s.start + s.duration) ?? p.scenes[1]
+}
+
+/** 把当前项目的样子存成「我的模板」 */
+export function presetFromProject(p: Project, name: string): CustomTemplate {
+  return {
+    id: Date.now().toString(36),
+    name,
+    baseTemplateId: p.templateId,
+    filter: p.settings.filter,
+    beatFx: p.settings.beatFx,
+    particles: p.settings.particles,
+    parallax: p.settings.parallax,
+    pace: p.settings.pace,
+    aspect: p.aspect,
+    musicPath: p.music?.path,
+    musicName: p.music?.name,
+    meta: { title: p.meta.title, subtitle: p.meta.subtitle, ending: p.meta.ending },
+    createdAt: Date.now()
+  }
+}
+
+export function presetMusic(c: CustomTemplate): MusicTrack | null | undefined {
+  if (!c.musicPath) return undefined
+  const builtin = useApp.getState().builtinMusic.find((m) => m.path === c.musicPath)
+  return builtin ?? { id: 'local:' + c.musicPath, path: c.musicPath, name: c.musicName ?? '音乐' }
+}
+
+/** 把「我的模板」应用到已有项目 */
+export async function applyPreset(p: Project, c: CustomTemplate): Promise<Project> {
+  const music = presetMusic(c)
+  const next = await rearrange(
+    { ...p, settings: { ...p.settings, filter: c.filter, beatFx: c.beatFx, particles: c.particles ?? p.settings.particles, parallax: c.parallax } },
+    { templateId: c.baseTemplateId, aspect: c.aspect, pace: c.pace, ...(music !== undefined ? { music } : {}) }
+  )
+  if (c.meta) next.meta = { ...next.meta, ...c.meta }
+  return next
+}
+
+/** 回到片头：停在片头标题完全出现的时刻（0 秒时画面元素还没入场） */
+export function resetPlayhead(): void {
+  const first = useApp.getState().project?.scenes[0]
+  usePlayback.setState({ time: first ? Math.min(2.5, first.duration * 0.6) : 0, playing: false })
 }

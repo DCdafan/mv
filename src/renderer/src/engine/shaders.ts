@@ -87,6 +87,8 @@ uniform vec4 uG1;             // exposure, contrast, saturation, warmth
 uniform vec4 uG2;             // tint, fade, mono, splitAmount
 uniform vec3 uSplitS;
 uniform vec3 uSplitH;
+uniform sampler2D uMaskTex;   // 主体蒙版（3D 视差）
+uniform int uUseMask;
 out vec4 outColor;
 ${SDF}
 vec3 grade(vec3 c){
@@ -120,6 +122,7 @@ void main(){
     vec2 uv = uUvRect.xy + vUv * uUvRect.zw;
     col = texture(uTex, uv);
     if (uGrade == 1 && col.a > 0.0) { col.rgb = grade(col.rgb / col.a) * col.a; }
+    if (uUseMask == 1) col *= texture(uMaskTex, uv).r;
     if (uReveal < 1.0) {
       float edge = uReveal * 1.15 - 0.075;
       col *= 1.0 - smoothstep(edge - 0.06, edge + 0.06, vUv.x);

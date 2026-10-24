@@ -112,6 +112,43 @@ export function Timeline({ project }: { project: Project }): JSX.Element {
     })
   }
 
+  const beatsInVideo = useMemo(() => (project.music?.analysis?.beats ?? []).map((b) => b - project.musicOffset).filter((b) => b > 0), [project.music, project.musicOffset])
+
+  const startResize = (e: React.MouseEvent, id: string, start: number, dur0: number): void => {
+    selectScene(id)
+    const x0 = e.clientX
+    const move = (ev: MouseEvent): void => {
+      let end = start + Math.max(0.8, dur0 + (ev.clientX - x0) / pps)
+      if (!ev.altKey && beatsInVideo.length) {
+        // 吸附最近的节拍（按住 Option / Alt 可以不吸附）
+        let best = end
+        let bd = Infinity
+        for (const b of beatsInVideo) {
+          const d = Math.abs(b - end)
+          if (d < bd) {
+            bd = d
+            best = b
+          }
+        }
+        if (bd < 0.35 && best - start >= 0.8) end = best
+      }
+      const dur = Math.round((end - start) * 1000) / 1000
+      commit(
+        (p) => ({
+          ...p,
+          scenes: retime(p.scenes.map((x) => (x.id === id ? { ...x, duration: dur, transition: { ...x.transition, duration: Math.min(x.transition.duration, dur * 0.6) } } : x)))
+        }),
+        { merge: 'resize-' + id }
+      )
+    }
+    const up = (): void => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+
   const ticks: number[] = []
   const step = pps > 60 ? 1 : pps > 25 ? 2 : pps > 12 ? 5 : 10
   for (let t = 0; t <= total; t += step) ticks.push(t)
@@ -124,7 +161,7 @@ export function Timeline({ project }: { project: Project }): JSX.Element {
           {project.scenes.length} 个场景 · {fmtTime(total)}
           {project.music?.analysis && ` · ${Math.round(project.music.analysis.bpm)} BPM`}
         </span>
-        <span className="muted tiny">拖动场景可调整顺序，拖入照片可替换</span>
+        <span className="muted tiny">拖动场景可调整顺序，拖右边缘改时长，拖入照片可替换</span>
         <div className="grow" />
         <button className="btn sm icon ghost" onClick={() => setZoom((z) => Math.max(1, z / 1.5))} title="缩小">
           <ZoomOut size={14} />
@@ -203,6 +240,16 @@ export function Timeline({ project }: { project: Project }): JSX.Element {
                   display: 'flex'
                 }}
               >
+                {/* 右边缘拖拽调时长，吸附到节拍 */}
+                <div
+                  title="拖动调整时长（吸附节拍）"
+                  onMouseDown={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    startResize(e, s.id, s.start, s.duration)
+                  }}
+                  style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 8, cursor: 'ew-resize', zIndex: 3, background: sel ? 'rgba(255,138,91,0.5)' : 'transparent' }}
+                />
                 {thumbs.length ? (
                   thumbs.map((t, k) => <div key={k} style={{ flex: 1, backgroundImage: thumbUrl(t), backgroundSize: 'cover', backgroundPosition: 'center', borderRight: k < thumbs.length - 1 ? '1px solid #000' : 0 }} />)
                 ) : (

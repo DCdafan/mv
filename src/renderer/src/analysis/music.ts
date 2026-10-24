@@ -7,10 +7,15 @@ const cache = new Map<string, Promise<MusicAnalysis>>()
 const bufferCache = new Map<string, Promise<AudioBuffer>>()
 
 let audioCtx: AudioContext | null = null
+/** 播放用的音频上下文：只在真正播放时创建 */
 export function getAudioContext(): AudioContext {
   if (!audioCtx) audioCtx = new AudioContext()
   return audioCtx
 }
+
+// 解码不需要声卡：用离线上下文，避免音频设备异常时连分析都失败
+let decodeCtx: OfflineAudioContext | null = null
+const decoder = (): OfflineAudioContext => (decodeCtx ??= new OfflineAudioContext(2, 1, 44100))
 
 /** 解码音频（播放用，保留原采样率） */
 export function decodeMusic(path: string): Promise<AudioBuffer> {
@@ -21,7 +26,7 @@ export function decodeMusic(path: string): Promise<AudioBuffer> {
         if (!r.ok) throw new Error('无法读取音乐文件')
         return r.arrayBuffer()
       })
-      .then((buf) => getAudioContext().decodeAudioData(buf))
+      .then((buf) => decoder().decodeAudioData(buf))
     p.catch(() => bufferCache.delete(path))
     bufferCache.set(path, p)
   }

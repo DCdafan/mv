@@ -1,12 +1,16 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { ExportJob, MusicTrack, Project, ProjectSummary, BrandSettings, ExportOptions } from '@shared/types'
+import type { ExportJob, MusicTrack, Project, ProjectSummary, BrandSettings, ExportOptions, AISettings, CustomTemplate } from '@shared/types'
 
 export interface AppSettings {
   outputDir: string
   brand: BrandSettings
   defaultFps: number
   defaultQuality: 'standard' | 'high' | 'ultra'
+  ai: AISettings
+  customTemplates: CustomTemplate[]
 }
+
+export type ChatContent = string | ({ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'auto' } })[]
 
 export interface RenderJobPayload {
   id: string
@@ -52,6 +56,14 @@ const api = {
     return () => ipcRenderer.removeListener('export:update', h)
   },
 
+  ai: {
+    models: (): Promise<string[]> => ipcRenderer.invoke('ai:models'),
+    chat: (messages: { role: 'system' | 'user' | 'assistant'; content: ChatContent }[], json: boolean): Promise<string> => ipcRenderer.invoke('ai:chat', messages, json),
+    speech: (text: string): Promise<string> => ipcRenderer.invoke('ai:speech', text)
+  },
+  setLogo: (src: string | null): Promise<string | null> => ipcRenderer.invoke('brand:setLogo', src),
+  mediaDuration: (p: string): Promise<number> => ipcRenderer.invoke('media:duration', p),
+  writePng: (p: string, data: ArrayBuffer): Promise<string> => ipcRenderer.invoke('file:writePng', p, data),
   reveal: (p: string): Promise<void> => ipcRenderer.invoke('shell:reveal', p),
   openPath: (p: string): Promise<void> => ipcRenderer.invoke('shell:open', p),
   appInfo: (): Promise<{ version: string; platform: string; userData: string; ffmpeg: string }> => ipcRenderer.invoke('app:info'),

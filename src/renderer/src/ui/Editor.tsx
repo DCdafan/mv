@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft, Undo2, Redo2, Shuffle, Download, Play, Pause, SkipBack, SkipForward, Film, Loader2, Maximize2, ImageDown } from 'lucide-react'
-import { ASPECT_SIZE } from '@shared/types'
-import { Renderer } from '../engine/renderer'
-import { loadAllFonts } from '../engine/text'
+import { renderCover } from './cover'
 import { projectDuration } from '@shared/types'
-import { useApp, usePlayback, rearrange } from '../store/app'
+import { useApp, usePlayback, rearrange, resetPlayhead } from '../store/app'
 import { Player } from './Player'
 import { LeftPanel } from './LeftPanel'
 import { Inspector } from './Inspector'
@@ -28,18 +26,7 @@ export function Editor(): JSX.Element | null {
     if (!proj) return
     setCoverBusy(true)
     try {
-      const [w, h] = ASPECT_SIZE[proj.aspect]
-      const canvas = document.createElement('canvas')
-      const r = new Renderer(canvas, { maxTextureSize: 4096, useOriginals: true, preserveDrawingBuffer: true })
-      r.setSize(w, h)
-      r.setProject(proj, getTemplate(proj.templateId), settings?.brand ?? null)
-      await loadAllFonts()
-      const t = Math.max(0.7, usePlayback.getState().time)
-      await r.prepare(t, t + 0.1)
-      r.render(t)
-      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'))
-      r.dispose()
-      if (!blob) throw new Error('生成图片失败')
+      const blob = await renderCover(proj, settings?.brand ?? null, usePlayback.getState().time)
       const out = await window.mv.saveImage(`${proj.name.replace(/[\\/:*?"<>|]/g, '_')}_封面.png`, await blob.arrayBuffer())
       if (out) toast('封面已保存', 'success')
     } catch (e) {
@@ -77,6 +64,10 @@ export function Editor(): JSX.Element | null {
           usePlayback.setState({ time: proj.scenes[j].start + 0.01, playing: false })
           selectScene(proj.scenes[j].id)
         } else usePlayback.setState({ time: Math.max(0, Math.min(projectDuration(proj), pb.time + dir)), playing: false })
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && useApp.getState().selectedOverlayId) {
+        const oid = useApp.getState().selectedOverlayId
+        commit((p) => ({ ...p, scenes: p.scenes.map((s) => ({ ...s, overlays: s.overlays?.filter((o) => o.id !== oid) })) }))
+        useApp.getState().selectOverlay(useApp.getState().selectedSceneId, null)
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && useApp.getState().selectedSceneId) {
         const s = proj.scenes.find((x) => x.id === useApp.getState().selectedSceneId)
         if (s?.kind === 'photo') {
@@ -90,10 +81,7 @@ export function Editor(): JSX.Element | null {
   }, [])
 
   // 打开项目时停在片头标题出现的位置（0 秒是黑场淡入）
-  useEffect(() => {
-    const first = useApp.getState().project?.scenes[0]
-    usePlayback.setState({ time: first ? Math.min(2.5, first.duration * 0.6) : 0, playing: false })
-  }, [project?.id])
+  useEffect(() => resetPlayhead(), [project?.id])
 
   if (!project) return null
   const total = projectDuration(project)
@@ -105,7 +93,7 @@ export function Editor(): JSX.Element | null {
     try {
       const next = await rearrange(project, { seed: Math.floor(Math.random() * 1e9) })
       commit(() => next)
-      usePlayback.setState({ time: 0, playing: false })
+      resetPlayhead()
       selectScene(null)
       toast('已换一种编排方式（可撤销）')
     } finally {

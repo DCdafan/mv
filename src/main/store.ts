@@ -1,6 +1,8 @@
 import { join } from 'path'
 import { promises as fsp, existsSync } from 'fs'
-import type { BrandSettings, Project, ProjectSummary, MusicTrack } from '@shared/types'
+import type { BrandSettings, Project, ProjectSummary, MusicTrack, AISettings, CustomTemplate } from '@shared/types'
+import { safeStorage } from 'electron'
+import type { AIConn } from './ai'
 import { projectDuration } from '@shared/types'
 
 export interface AppSettings {
@@ -8,7 +10,27 @@ export interface AppSettings {
   brand: BrandSettings
   defaultFps: number
   defaultQuality: 'standard' | 'high' | 'ultra'
+  ai: AISettings
+  customTemplates: CustomTemplate[]
 }
+
+/** 磁盘上的 AI 设置：Key 加密存放 */
+interface StoredAI extends Omit<AISettings, 'apiKey' | 'hasKey'> {
+  apiKeyEnc?: string
+  apiKeyPlain?: string
+}
+
+const DEFAULT_AI: AISettings = {
+  enabled: false,
+  baseUrl: 'https://api.openai.com/v1',
+  apiKey: '',
+  model: 'gpt-4o-mini',
+  ttsModel: 'tts-1',
+  voice: 'alloy'
+}
+
+// 测试模式下不碰系统钥匙串，避免弹窗
+const canEncrypt = (): boolean => !process.env['MV_USER_DATA'] && safeStorage.isEncryptionAvailable()
 
 const BUILTIN_MUSIC: { file: string; name: string }[] = [
   { file: 'wedding-march.mp3', name: '婚礼进行曲 · 门德尔松' },
@@ -42,25 +64,57 @@ export class Store {
       outputDir: join(this.videosDir, '拾光MV'),
       brand: { enabled: false, studioName: '', slogan: '', phone: '', watermark: false },
       defaultFps: 30,
-      defaultQuality: 'high'
+      defaultQuality: 'high',
+      ai: DEFAULT_AI,
+      customTemplates: []
     }
     try {
       const saved = JSON.parse(await fsp.readFile(this.settingsPath, 'utf8'))
-      this.settings = { ...defaults, ...saved, brand: { ...defaults.brand, ...(saved.brand || {}) } }
+      const ai = { ...DEFAULT_AI, ...(saved.ai || {}) } as AISettings & StoredAI
+      ai.apiKey = this.decryptKey(ai)
+      delete ai.apiKeyEnc
+      delete ai.apiKeyPlain
+      this.settings = { ...defaults, ...saved, brand: { ...defaults.brand, ...(saved.brand || {}) }, ai, customTemplates: saved.customTemplates || [] }
     } catch {
       this.settings = defaults
     }
     await fsp.mkdir(this.settings.outputDir, { recursive: true }).catch(() => {})
   }
 
+  private decryptKey(ai: StoredAI): string {
+    try {
+      if (ai.apiKeyEnc && safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(Buffer.from(ai.apiKeyEnc, 'base64'))
+    } catch {
+      return ''
+    }
+    return ai.apiKeyPlain ?? ''
+  }
+
+  /** 给页面用的设置：不带 API Key 明文 */
   getSettings(): AppSettings {
-    return this.settings
+    return { ...this.settings, ai: { ...this.settings.ai, apiKey: '', hasKey: !!this.settings.ai.apiKey } }
+  }
+
+  aiConn(): AIConn & { enabled: boolean } {
+    const a = this.settings.ai
+    return { enabled: a.enabled, baseUrl: a.baseUrl, apiKey: a.apiKey, model: a.model, ttsModel: a.ttsModel, voice: a.voice }
   }
 
   async setSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
-    this.settings = { ...this.settings, ...patch, brand: { ...this.settings.brand, ...(patch.brand || {}) } }
-    await fsp.writeFile(this.settingsPath, JSON.stringify(this.settings, null, 2))
-    return this.settings
+    const ai = { ...this.settings.ai, ...(patch.ai || {}) }
+    // 页面没有传新 Key（空字符串）时保留原来的 Key
+    if (!patch.ai?.apiKey) ai.apiKey = this.settings.ai.apiKey
+    if (patch.ai?.apiKey === '__CLEAR__') ai.apiKey = ''
+    delete ai.hasKey
+    this.settings = { ...this.settings, ...patch, brand: { ...this.settings.brand, ...(patch.brand || {}) }, ai }
+    const stored: StoredAI = { ...ai }
+    delete (stored as Partial<AISettings>).apiKey
+    if (ai.apiKey) {
+      if (canEncrypt()) stored.apiKeyEnc = safeStorage.encryptString(ai.apiKey).toString('base64')
+      else stored.apiKeyPlain = ai.apiKey
+    }
+    await fsp.writeFile(this.settingsPath, JSON.stringify({ ...this.settings, ai: stored }, null, 2))
+    return this.getSettings()
   }
 
   builtinMusic(resources: string): MusicTrack[] {

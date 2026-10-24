@@ -36,7 +36,7 @@ async function run(): Promise<void> {
 
   await loadAllFonts()
   const canvas = document.createElement('canvas')
-  const renderer = new Renderer(canvas, { maxTextureSize: Math.max(2048, Math.min(4096, Math.max(W, H) * 1.6)), useOriginals: Math.max(W, H) > 2048, preserveDrawingBuffer: true })
+  const renderer = new Renderer(canvas, { maxTextureSize: Math.max(2048, Math.min(4096, Math.max(W, H) * 1.6)), useOriginals: Math.max(W, H) > 2048, preserveDrawingBuffer: true, exact: true })
   renderer.setSize(W, H)
   renderer.setProject(project, getTemplate(project.templateId), brand)
 
@@ -70,7 +70,7 @@ async function run(): Promise<void> {
   for (let i = 0; i < frames; i++) {
     if (encodeError) throw encodeError
     const t = i / fps
-    await renderer.prepare(t, t + 1.5)
+    await renderer.prepareExact(t, fps)
     renderer.render(t)
     const frame = new VideoFrame(canvas, { timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps) })
     encoder.encode(frame, { keyFrame: i % (fps * 2) === 0 })

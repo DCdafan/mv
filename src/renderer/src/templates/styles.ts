@@ -651,6 +651,8 @@ export function outro(o: OutroOpt): SceneStyle {
       // 影楼品牌信息（未开启品牌时文字为空，自动隐藏）
       const by = c.H * 0.76
       const bs: TextStyle = { ...o.smallStyle, size: o.smallStyle.size * 1.05, weight: 600, letterSpacing: 0.2 }
+      // 品牌 Logo（上传了才显示）放在店名上方
+      layers.push({ type: 'logo', rect: { x: (c.W / 2 - S * 0.07) / c.W, y: (by - bs.size * S * 1.2 - S * 0.12) / c.H, w: (S * 0.14) / c.W, h: 0 }, in: { type: 'pop', delay: 1.4, duration: 0.6 } })
       layers.push(text('studio', '', pxc(c, c.W / 2, by, c.W - S * 0.2, bs.size * S * 1.8), bs, { type: 'slideUp', delay: 1.6, duration: 0.9 }))
       layers.push(text('slogan', '', pxc(c, c.W / 2, by + bs.size * S * 1.7, c.W - S * 0.2, bs.size * S * 1.6), { ...o.smallStyle, size: o.smallStyle.size * 0.85 }, { type: 'fade', delay: 1.9, duration: 0.9 }))
       layers.push(text('phone', '', pxc(c, c.W / 2, by + bs.size * S * 3.1, c.W - S * 0.2, bs.size * S * 1.6), { ...o.smallStyle, size: o.smallStyle.size * 0.8 }, { type: 'fade', delay: 2.1, duration: 0.9 }))
@@ -680,7 +682,7 @@ export function styleTextKeys(style: SceneStyle, palette: BuildCtx['t'], fonts: 
     for (const l of layers) {
       if (l.type !== 'text' || !l.key) continue
       const base = l.key.split('@')[0]
-      if (['caption', 'product', 'price', 'tag'].includes(base) && !keys.has(l.key)) keys.set(l.key, l.text)
+      if (['caption', 'product', 'price', 'tag', 'desc'].includes(base) && !keys.has(l.key)) keys.set(l.key, l.text)
     }
   } catch {
     /* 版式构建失败时不显示文字输入框 */

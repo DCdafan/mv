@@ -13,15 +13,17 @@ export function fileUrl(path: string): string {
   return 'mvfile://local/' + encodeURIComponent(path)
 }
 
-interface Entry {
+export interface Entry {
   photo?: TexInfo
   blur?: TexInfo
+  mask?: TexInfo
+  video?: HTMLVideoElement
   loading?: Promise<void>
   failed?: boolean
   used: number
 }
 
-/** 照片纹理：按需异步加载，LRU 淘汰，附带一张模糊背景版 */
+/** 照片 / 视频纹理：按需异步加载，LRU 淘汰；附带模糊背景版和主体蒙版 */
 export class PhotoTextures {
   private map = new Map<string, Entry>()
   private tick = 0
@@ -30,6 +32,7 @@ export class PhotoTextures {
   constructor(private gl: GL, private maxSize: number, private useOriginal: boolean, private limit = 60) {}
 
   private source(p: PhotoAsset): string {
+    if (p.media === 'video') return p.path
     if (!this.useOriginal && p.proxy) return p.proxy
     return p.path
   }
@@ -47,15 +50,14 @@ export class PhotoTextures {
     e = { used: ++this.tick }
     this.map.set(p.id, e)
     const entry = e
-    entry.loading = this.load(p)
-      .then(({ photo, blur }) => {
-        entry.photo = photo
-        entry.blur = blur
+    const job = p.media === 'video' ? this.loadVideo(p, entry) : this.load(p).then((r) => Object.assign(entry, r))
+    entry.loading = job
+      .then(() => {
         this.evict()
         this.onLoaded?.()
       })
       .catch((err) => {
-        console.warn('照片加载失败', p.path, err)
+        console.warn('素材加载失败', p.path, err)
         entry.failed = true
       })
       .finally(() => {
@@ -64,24 +66,7 @@ export class PhotoTextures {
     return entry.loading
   }
 
-  private async load(p: PhotoAsset): Promise<{ photo: TexInfo; blur: TexInfo }> {
-    const res = await fetch(fileUrl(this.source(p)))
-    if (!res.ok) throw new Error('HTTP ' + res.status)
-    const blob = await res.blob()
-    const probe = await createImageBitmap(blob, { imageOrientation: 'from-image' })
-    let w = probe.width
-    let h = probe.height
-    let bmp: ImageBitmap = probe
-    const scale = Math.min(1, this.maxSize / Math.max(w, h))
-    if (scale < 1) {
-      w = Math.round(w * scale)
-      h = Math.round(h * scale)
-      bmp = await createImageBitmap(blob, { imageOrientation: 'from-image', resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
-      probe.close()
-    }
-    const gl = this.gl
-    const photo = { tex: createTexture(gl, bmp, true), w, h }
-    // 模糊背景：缩到很小再模糊，放大后天然柔和
+  private blurOf(src: CanvasImageSource, w: number, h: number): TexInfo {
     const bw = 96
     const bh = Math.max(1, Math.round((bw * h) / w))
     const c = document.createElement('canvas')
@@ -89,10 +74,105 @@ export class PhotoTextures {
     c.height = bh
     const ctx = c.getContext('2d')!
     ctx.filter = 'blur(5px)'
-    ctx.drawImage(bmp, -8, -8, bw + 16, bh + 16)
-    const blur = { tex: createTexture(gl, c, false), w: bw, h: bh }
+    ctx.drawImage(src, -8, -8, bw + 16, bh + 16)
+    return { tex: createTexture(this.gl, c, false), w: bw, h: bh }
+  }
+
+  private async bitmap(path: string, maxSize: number): Promise<ImageBitmap> {
+    const res = await fetch(fileUrl(path))
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    const blob = await res.blob()
+    const probe = await createImageBitmap(blob, { imageOrientation: 'from-image' })
+    const scale = Math.min(1, maxSize / Math.max(probe.width, probe.height))
+    if (scale >= 1) return probe
+    const w = Math.round(probe.width * scale)
+    const h = Math.round(probe.height * scale)
+    probe.close()
+    return createImageBitmap(blob, { imageOrientation: 'from-image', resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
+  }
+
+  private async load(p: PhotoAsset): Promise<{ photo: TexInfo; blur: TexInfo; mask?: TexInfo }> {
+    const bmp = await this.bitmap(this.source(p), this.maxSize)
+    const gl = this.gl
+    const photo = { tex: createTexture(gl, bmp, true), w: bmp.width, h: bmp.height }
+    const blur = this.blurOf(bmp, bmp.width, bmp.height)
     bmp.close()
-    return { photo, blur }
+    let mask: TexInfo | undefined
+    if (p.mask) {
+      try {
+        const mb = await this.bitmap(p.mask, 1024)
+        mask = { tex: createTexture(gl, mb, false), w: mb.width, h: mb.height }
+        mb.close()
+      } catch {
+        /* 没有蒙版就不做视差 */
+      }
+    }
+    return { photo, blur, mask }
+  }
+
+  private async loadVideo(p: PhotoAsset, entry: Entry): Promise<void> {
+    const v = document.createElement('video')
+    v.muted = true
+    v.playsInline = true
+    v.preload = 'auto'
+    v.crossOrigin = 'anonymous'
+    v.src = fileUrl(p.path)
+    await new Promise<void>((resolve, reject) => {
+      v.onloadeddata = () => resolve()
+      v.onerror = () => reject(new Error('视频无法解码'))
+    })
+    const gl = this.gl
+    const tex = gl.createTexture()!
+    gl.bindTexture(gl.TEXTURE_2D, tex)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    entry.video = v
+    entry.photo = { tex, w: v.videoWidth, h: v.videoHeight }
+    this.uploadVideo(entry)
+    entry.blur = this.blurOf(v, v.videoWidth, v.videoHeight)
+  }
+
+  /** 把视频当前帧上传到纹理 */
+  uploadVideo(e: Entry): void {
+    const v = e.video
+    if (!v || !e.photo || v.readyState < 2) return
+    const gl = this.gl
+    gl.bindTexture(gl.TEXTURE_2D, e.photo.tex)
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v)
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+  }
+
+  /** 精确定位到某一时刻（导出用），等待解码完成 */
+  async seekExact(p: PhotoAsset, time: number, tolerance: number): Promise<void> {
+    await this.request(p)
+    const e = this.map.get(p.id)
+    const v = e?.video
+    if (!v) return
+    const t = Math.max(0, Math.min(time, (v.duration || time) - 0.04))
+    if (Math.abs(v.currentTime - t) <= tolerance && v.readyState >= 2) return
+    await new Promise<void>((resolve) => {
+      const done = (): void => {
+        v.removeEventListener('seeked', done)
+        resolve()
+      }
+      v.addEventListener('seeked', done)
+      v.currentTime = t
+      setTimeout(done, 3000)
+    })
+  }
+
+  private release(e: Entry): void {
+    if (e.photo) this.gl.deleteTexture(e.photo.tex)
+    if (e.blur) this.gl.deleteTexture(e.blur.tex)
+    if (e.mask) this.gl.deleteTexture(e.mask.tex)
+    if (e.video) {
+      e.video.pause()
+      e.video.removeAttribute('src')
+      e.video.load()
+    }
   }
 
   private evict(): void {
@@ -101,19 +181,34 @@ export class PhotoTextures {
     const n = this.map.size - this.limit
     for (let i = 0; i < n && i < entries.length; i++) {
       const [id, e] = entries[i]
-      this.gl.deleteTexture(e.photo!.tex)
-      if (e.blur) this.gl.deleteTexture(e.blur.tex)
+      this.release(e)
       this.map.delete(id)
     }
   }
 
+  /** 暂停所有视频（预览停止播放时） */
+  pauseAll(): void {
+    for (const e of this.map.values()) e.video?.pause()
+  }
+
   dispose(): void {
-    for (const e of this.map.values()) {
-      if (e.photo) this.gl.deleteTexture(e.photo.tex)
-      if (e.blur) this.gl.deleteTexture(e.blur.tex)
-    }
+    for (const e of this.map.values()) this.release(e)
     this.map.clear()
   }
+}
+
+/** 品牌 Logo 等单张图片纹理 */
+export async function loadImageTexture(gl: GL, path: string, maxSize = 1024): Promise<TexInfo> {
+  const res = await fetch(fileUrl(path))
+  if (!res.ok) throw new Error('HTTP ' + res.status)
+  const bmp = await createImageBitmap(await res.blob())
+  const s = Math.min(1, maxSize / Math.max(bmp.width, bmp.height))
+  const c = document.createElement('canvas')
+  c.width = Math.max(1, Math.round(bmp.width * s))
+  c.height = Math.max(1, Math.round(bmp.height * s))
+  c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height)
+  bmp.close()
+  return { tex: createTexture(gl, c, true), w: c.width, h: c.height }
 }
 
 /** 文字、装饰等由画布生成的纹理，按 key 缓存 */

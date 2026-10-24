@@ -1,7 +1,9 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, screen } from 'electron'
 import { join, extname, normalize } from 'path'
 import { pathToFileURL } from 'url'
-import { promises as fsp, existsSync } from 'fs'
+import { promises as fsp, existsSync, createReadStream } from 'fs'
+import { Readable } from 'stream'
+import * as ai from './ai'
 import { createHash } from 'crypto'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -33,11 +35,23 @@ const MIME: Record<string, string> = {
   '.json': 'application/json',
   '.jpg': 'image/jpeg',
   '.png': 'image/png',
-  '.task': 'application/octet-stream'
+  '.task': 'application/octet-stream',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm'
 }
 
 const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.heic', '.heif'])
 const AUDIO_EXT = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.flac'])
+const VIDEO_EXT = new Set(['.mp4', '.mov', '.m4v', '.webm'])
+const isMedia = (name: string): boolean => IMAGE_EXT.has(extname(name).toLowerCase()) || VIDEO_EXT.has(extname(name).toLowerCase())
 
 let mainWindow: BrowserWindow | null = null
 let store: Store
@@ -75,7 +89,7 @@ async function walkImages(dir: string, out: string[], depth = 0): Promise<void> 
     if (e.name.startsWith('.')) continue
     const p = join(dir, e.name)
     if (e.isDirectory()) await walkImages(p, out, depth + 1)
-    else if (IMAGE_EXT.has(extname(e.name).toLowerCase())) out.push(p)
+    else if (isMedia(e.name)) out.push(p)
   }
 }
 
@@ -106,7 +120,7 @@ function registerIpc(): void {
     const r = await dialog.showOpenDialog(mainWindow!, {
       title: mode === 'folder' ? '选择照片文件夹' : '选择照片',
       properties: mode === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
-      filters: mode === 'files' ? [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'heic'] }] : undefined
+      filters: mode === 'files' ? [{ name: '照片和视频', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'heic', 'mp4', 'mov', 'm4v', 'webm'] }] : undefined
     })
     if (r.canceled) return []
     const files: string[] = []
@@ -124,7 +138,7 @@ function registerIpc(): void {
       try {
         const st = await fsp.stat(p)
         if (st.isDirectory()) await walkImages(p, files)
-        else if (IMAGE_EXT.has(extname(p).toLowerCase())) files.push(p)
+        else if (isMedia(p)) files.push(p)
       } catch {
         /* 忽略无法读取的路径 */
       }
@@ -219,6 +233,39 @@ function registerIpc(): void {
   ipcMain.handle('settings:set', async (_e, patch) => store.setSettings(patch))
 
   ipcMain.handle('export:enqueue', async (_e, payload) => exportQueue.enqueue(payload))
+
+  // ---- AI ----
+  const conn = (): ai.AIConn => {
+    const c = store.aiConn()
+    if (!c.apiKey) throw new Error('请先在「AI 设置」里填写 API Key')
+    return c
+  }
+  ipcMain.handle('ai:models', async () => ai.listModels(conn()))
+  ipcMain.handle('ai:chat', async (_e, messages: ai.ChatMessage[], json: boolean) => ai.chat(conn(), messages, json))
+  ipcMain.handle('ai:speech', async (_e, text: string) => {
+    const out = join(store.cacheDir, `voice-${createHash('md5').update(text + Date.now()).digest('hex').slice(0, 12)}.mp3`)
+    await ai.speech(conn(), text, out)
+    return out
+  })
+
+  // ---- 品牌 Logo：复制一份到数据目录，避免原图被移动后失效 ----
+  ipcMain.handle('brand:setLogo', async (_e, src: string | null) => {
+    if (!src) return null
+    const dir = join(app.getPath('userData'), 'brand')
+    await fsp.mkdir(dir, { recursive: true })
+    const dst = join(dir, `logo-${Date.now()}${extname(src).toLowerCase() || '.png'}`)
+    await fsp.copyFile(src, dst)
+    return dst
+  })
+
+  ipcMain.handle('media:duration', async (_e, p: string) => probeDuration(p))
+  // 只允许写 PNG（多版本导出时把封面存到视频旁边）
+  ipcMain.handle('file:writePng', async (_e, p: string, data: ArrayBuffer) => {
+    if (extname(p).toLowerCase() !== '.png') throw new Error('只能保存 PNG')
+    await fsp.mkdir(join(p, '..'), { recursive: true })
+    await fsp.writeFile(p, Buffer.from(data))
+    return p
+  })
   ipcMain.handle('export:cancel', async (_e, id: string) => exportQueue.cancel(id))
   ipcMain.handle('export:list', async () => exportQueue.list())
   ipcMain.handle('export:clearFinished', async () => exportQueue.clearFinished())
@@ -233,21 +280,43 @@ function registerIpc(): void {
   }))
 }
 
+/** 用 FFmpeg 读音频 / 视频时长 */
+async function probeDuration(p: string): Promise<number> {
+  try {
+    const { stderr } = await execFileP(exportQueue.ffmpegPath(), ['-hide_banner', '-i', p]).catch((e) => e)
+    const m = String(stderr).match(/Duration: (\d+):(\d+):([\d.]+)/)
+    return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : 0
+  } catch {
+    return 0
+  }
+}
+
 app.whenReady().then(async () => {
   store = new Store(app.getPath('userData'), app.getPath('videos'))
   await store.init()
   exportQueue = new ExportQueue(store, () => mainWindow)
 
   // mvfile://local/<encodeURIComponent(绝对路径)>
+  // 自己读文件并支持 Range 请求，视频才能拖动和逐帧定位
   protocol.handle('mvfile', async (req) => {
     const u = new URL(req.url)
     const filePath = decodeURIComponent(u.pathname.slice(1))
     try {
-      const res = await net.fetch(pathToFileURL(filePath).toString())
-      const headers = new Headers(res.headers)
-      headers.set('Access-Control-Allow-Origin', '*')
-      headers.set('Cache-Control', 'max-age=3600')
-      return new Response(res.body, { status: res.status, headers })
+      const st = await fsp.stat(filePath)
+      const type = MIME[extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+      const base = { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'max-age=3600', 'Accept-Ranges': 'bytes', 'Content-Type': type }
+      const range = req.headers.get('range')
+      const m = range?.match(/bytes=(\d*)-(\d*)/)
+      if (m && (m[1] || m[2])) {
+        let start = m[1] ? Number(m[1]) : Math.max(0, st.size - Number(m[2]))
+        let end = m[1] && m[2] ? Number(m[2]) : st.size - 1
+        end = Math.min(end, st.size - 1)
+        start = Math.min(start, end)
+        const body = Readable.toWeb(createReadStream(filePath, { start, end })) as ReadableStream
+        return new Response(body, { status: 206, headers: { ...base, 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Content-Length': String(end - start + 1) } })
+      }
+      const body = Readable.toWeb(createReadStream(filePath)) as ReadableStream
+      return new Response(body, { status: 200, headers: { ...base, 'Content-Length': String(st.size) } })
     } catch {
       return new Response('not found', { status: 404 })
     }

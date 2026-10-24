@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FolderOpen, ImagePlus, Music, Play, Pause, Upload, Wand2, Check, Loader2, Sparkles } from 'lucide-react'
-import type { Aspect, MusicTrack, Pace, PhotoAsset } from '@shared/types'
+import type { Aspect, MusicTrack, Pace, PhotoAsset, CustomTemplate } from '@shared/types'
 import { Modal, Seg, Switch, Progress, thumbUrl, AspectIcon, fmtTime } from './common'
 import { importPhotos, FLAG_LABEL, type ImportProgress } from '../analysis/photo'
 import { TEMPLATES, CATEGORIES, getTemplate } from '../templates'
 import { templateThumb } from './preview'
-import { useApp, createProject, todayString } from '../store/app'
+import { useApp, createProject, todayString, presetMusic } from '../store/app'
 import { analyzeMusic } from '../analysis/music'
 import { fileUrl } from '../engine/textures'
 
@@ -22,6 +22,13 @@ export function autoExclude(list: PhotoAsset[], on: boolean): PhotoAsset[] {
 }
 
 export function ProductLabel({ p }: { p: PhotoAsset }): JSX.Element | null {
+  if (p.media === 'video') {
+    return (
+      <div style={{ position: 'absolute', left: 4, top: 4, padding: '1px 6px', borderRadius: 4, fontSize: 10, background: 'rgba(0,0,0,0.65)' }}>
+        ▶ {fmtTime(p.duration ?? 0)}
+      </div>
+    )
+  }
   if (!p.product) return null
   return (
     <div style={{ position: 'absolute', left: 0, right: 0, top: 0, padding: '3px 22px 8px 5px', fontSize: 10, background: 'linear-gradient(rgba(0,0,0,0.65), transparent)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -143,13 +150,32 @@ export function MusicList({ value, onChange, recommended }: { value: MusicTrack 
   )
 }
 
-export function TemplateGrid({ value, onChange, photos, aspect = '16:9' }: { value: string; onChange: (id: string) => void; photos: PhotoAsset[]; aspect?: Aspect }): JSX.Element {
-  const [cat, setCat] = useState<string>('全部')
+export function TemplateGrid({ value, onChange, photos, aspect = '16:9', presetId, onPreset }: { value: string; onChange: (id: string) => void; photos: PhotoAsset[]; aspect?: Aspect; presetId?: string | null; onPreset?: (c: CustomTemplate) => void }): JSX.Element {
+  const custom = useApp((s) => s.settings?.customTemplates ?? [])
+  const [cat, setCat] = useState<string>(custom.length && onPreset ? '我的' : '全部')
   const list = TEMPLATES.filter((t) => cat === '全部' || t.category === cat)
+  if (cat === '我的' && onPreset) {
+    return (
+      <>
+        <div className="chips">
+          {['我的', ...CATEGORIES].map((c) => (
+            <button key={c} className={'chip' + (cat === c ? ' on' : '')} onClick={() => setCat(c)}>
+              {c}
+            </button>
+          ))}
+        </div>
+        <div className="tpl-grid">
+          {custom.map((c) => (
+            <TemplateCard key={c.id} id={c.baseTemplateId} label={c.name} on={presetId === c.id} onClick={() => onPreset(c)} photos={photos} aspect={aspect} />
+          ))}
+        </div>
+      </>
+    )
+  }
   return (
     <>
       <div className="chips">
-        {CATEGORIES.map((c) => (
+        {(custom.length && onPreset ? ['我的', ...CATEGORIES] : CATEGORIES).map((c) => (
           <button key={c} className={'chip' + (cat === c ? ' on' : '')} onClick={() => setCat(c)}>
             {c}
           </button>
@@ -157,14 +183,14 @@ export function TemplateGrid({ value, onChange, photos, aspect = '16:9' }: { val
       </div>
       <div className="tpl-grid">
         {list.map((t) => (
-          <TemplateCard key={t.id} id={t.id} on={value === t.id} onClick={() => onChange(t.id)} photos={photos} aspect={aspect} />
+          <TemplateCard key={t.id} id={t.id} on={!presetId && value === t.id} onClick={() => onChange(t.id)} photos={photos} aspect={aspect} />
         ))}
       </div>
     </>
   )
 }
 
-export function TemplateCard({ id, on, onClick, photos, aspect, compact }: { id: string; on: boolean; onClick: () => void; photos: PhotoAsset[]; aspect: Aspect; compact?: boolean }): JSX.Element {
+export function TemplateCard({ id, on, onClick, photos, aspect, compact, label, onDelete }: { id: string; on: boolean; onClick: () => void; photos: PhotoAsset[]; aspect: Aspect; compact?: boolean; label?: string; onDelete?: () => void }): JSX.Element {
   const t = getTemplate(id)
   const [img, setImg] = useState<string | null>(null)
   useEffect(() => {
@@ -186,10 +212,22 @@ export function TemplateCard({ id, on, onClick, photos, aspect, compact }: { id:
       </div>
       <div className="info">
         <div className="row">
-          <b className="grow">{t.name}</b>
-          <span className="badge">{t.category}</span>
+          <b className="grow">{label ?? t.name}</b>
+          {label ? <span className="badge accent">我的</span> : <span className="badge">{t.category}</span>}
+          {onDelete && (
+            <button
+              className="btn sm ghost icon"
+              title="删除这个模板"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete()
+              }}
+            >
+              ×
+            </button>
+          )}
         </div>
-        {!compact && <p>{t.description}</p>}
+        {!compact && <p>{label ? `基于「${t.name}」` : t.description}</p>}
       </div>
     </div>
   )
@@ -249,6 +287,7 @@ export function Wizard({ onClose }: { onClose: () => void }): JSX.Element {
   const [meta, setMeta] = useState({ ...tpl.defaults, date: todayString() })
   const [name, setName] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
+  const [preset, setPreset] = useState<CustomTemplate | null>(null)
   const { toast, openProject, refreshProjects } = useApp()
 
   // 选模板时带出推荐音乐、节奏、画幅和默认文案
@@ -284,6 +323,7 @@ export function Wizard({ onClose }: { onClose: () => void }): JSX.Element {
       const p = await createProject({ name: name || meta.title || '我的MV', photos, templateId, music, aspect, pace, durationMode, meta })
       setBusy('正在保存项目…')
       p.cover = used[0]?.thumb
+      if (preset) p.settings = { ...p.settings, filter: preset.filter, beatFx: preset.beatFx, particles: preset.particles ?? p.settings.particles, parallax: preset.parallax }
       await window.mv.saveProject(p)
       await refreshProjects()
       onClose()
@@ -406,7 +446,40 @@ export function Wizard({ onClose }: { onClose: () => void }): JSX.Element {
           )}
         </div>
       )}
-      {step === 1 && <TemplateGrid value={templateId} onChange={setTemplateId} photos={photos} aspect={aspect} />}
+      {step === 1 && (
+        <>
+          <WizardAIRecommend photos={photos} onApply={(tid, m) => {
+            setPreset(null)
+            setTemplateId(tid)
+            if (m) {
+              setMusic(m)
+              setMusicTouched(true)
+            }
+          }} />
+          <TemplateGrid
+            value={templateId}
+            onChange={(id) => {
+              setPreset(null)
+              setTemplateId(id)
+            }}
+            photos={photos}
+            aspect={aspect}
+            presetId={preset?.id}
+            onPreset={(c) => {
+              setPreset(c)
+              setTemplateId(c.baseTemplateId)
+              const m = presetMusic(c)
+              if (m !== undefined) {
+                setMusic(m)
+                setMusicTouched(true)
+              }
+              if (c.aspect) setTimeout(() => setAspect(c.aspect!), 0)
+              if (c.pace) setTimeout(() => setPace(c.pace!), 0)
+              if (c.meta) setTimeout(() => setMeta((x) => ({ ...x, ...c.meta })), 0)
+            }}
+          />
+        </>
+      )}
       {step === 2 && (
         <div style={{ maxWidth: 620, margin: '0 auto' }}>
           <div className="panel-title">
@@ -489,5 +562,38 @@ export function Wizard({ onClose }: { onClose: () => void }): JSX.Element {
         </div>
       )}
     </Modal>
+  )
+}
+
+/** 向导里的「AI 推荐」：看几张照片，推荐模板和音乐 */
+function WizardAIRecommend({ photos, onApply }: { photos: PhotoAsset[]; onApply: (templateId: string, music: MusicTrack | null) => void }): JSX.Element | null {
+  const { settings, builtinMusic, toast } = useApp()
+  const [busy, setBusy] = useState(false)
+  const [reason, setReason] = useState('')
+  if (!settings?.ai.enabled || !settings.ai.hasKey) return null
+  return (
+    <div className="row" style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 10, background: 'var(--accent-soft)' }}>
+      <Sparkles size={15} style={{ color: 'var(--accent)' }} />
+      <span className="grow small">{reason || '让 AI 看看照片，推荐最合适的模板和音乐'}</span>
+      <button
+        className="btn sm primary"
+        disabled={busy || !photos.length}
+        onClick={async () => {
+          setBusy(true)
+          try {
+            const { aiRecommend } = await import('../ai/ai')
+            const r = await aiRecommend(photos, builtinMusic)
+            onApply(r.templateId, builtinMusic.find((m) => m.id === r.musicId) ?? null)
+            setReason(`已选「${getTemplate(r.templateId).name}」：${r.reason}`)
+          } catch (e) {
+            toast('AI 推荐失败：' + (e as Error).message, 'error')
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        {busy ? <Loader2 size={13} className="spin" /> : <Sparkles size={13} />} AI 推荐
+      </button>
+    </div>
   )
 }

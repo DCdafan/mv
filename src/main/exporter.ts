@@ -5,6 +5,7 @@ import { spawn } from 'child_process'
 import type { BrandSettings, ExportJob, ExportOptions, Project } from '@shared/types'
 import { projectDuration } from '@shared/types'
 import type { Store } from './store'
+import { buildAudioArgs } from './audio'
 import { rendererUrl } from './paths'
 
 export interface ExportPayload {
@@ -167,23 +168,9 @@ export class ExportQueue {
 
   private mux(r: Running): Promise<void> {
     const { project, options } = r.payload
-    const duration = projectDuration(project)
     const args = ['-y', '-v', 'error', '-i', r.tmpVideo]
-    if (project.music && existsSync(project.music.path)) {
-      const musicDur = project.music.analysis?.duration ?? 0
-      const needLoop = musicDur > 0 && project.musicOffset + duration > musicDur
-      if (needLoop) args.push('-stream_loop', '-1')
-      args.push('-i', project.music.path)
-      const fade = Math.min(project.settings.fadeOut, duration / 3)
-      const vol = project.settings.musicVolume
-      const filter =
-        `[1:a]atrim=start=${project.musicOffset.toFixed(3)}:duration=${duration.toFixed(3)},asetpts=PTS-STARTPTS,` +
-        `afade=t=in:st=0:d=0.4,afade=t=out:st=${Math.max(0, duration - fade).toFixed(3)}:d=${fade.toFixed(3)},volume=${vol}[a]`
-      args.push('-filter_complex', filter, '-map', '0:v', '-map', '[a]', '-c:a', 'aac', '-b:a', '192k')
-    } else {
-      args.push('-map', '0:v')
-    }
-    args.push('-c:v', 'copy', '-t', duration.toFixed(3), '-movflags', '+faststart', options.outPath)
+    args.push(...buildAudioArgs(project))
+    args.push('-c:v', 'copy', '-t', projectDuration(project).toFixed(3), '-movflags', '+faststart', options.outPath)
     return new Promise((resolve, reject) => {
       fsp
         .mkdir(join(options.outPath, '..'), { recursive: true })
@@ -226,3 +213,4 @@ export class ExportQueue {
     this.pump()
   }
 }
+

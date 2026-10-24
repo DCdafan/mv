@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { Download, FolderOpen, X, CheckCircle2, AlertCircle, Loader2, Film, Trash2 } from 'lucide-react'
 import type { Aspect, ExportOptions, Project } from '@shared/types'
 import { projectDuration } from '@shared/types'
-import { Modal, Seg, Progress, fmtTime } from './common'
+import { Modal, Seg, Progress, fmtTime, Switch } from './common'
+import { makeShortVersion } from '../arrange/highlight'
+import { renderCover, defaultCoverTime } from './cover'
 import { useApp } from '../store/app'
 
 export type Quality = 'standard' | 'high' | 'ultra'
@@ -47,14 +49,35 @@ export function ExportDialog({ project, onClose }: { project: Project; onClose: 
   const br = bitrateFor(w, h, fps, q)
   const sizeMB = ((br + 192000) * dur) / 8 / 1e6
 
+  const [withShort, setWithShort] = useState(false)
+  const [shortAspect, setShortAspect] = useState<Aspect>('9:16')
+  const [withCover, setWithCover] = useState(false)
+  const [working, setWorking] = useState(false)
+
   const go = async (): Promise<void> => {
     const out = await window.mv.saveVideo(`${safeName(project.name)}_${short}p.mp4`)
     if (!out) return
-    const brand = settings?.brand ?? null
-    await window.mv.enqueueExport({ project, brand, options: buildExportOptions(project, short, fps, q, out) })
-    toast('已加入导出队列，可以继续编辑', 'success')
-    setShowExports(true)
-    onClose()
+    setWorking(true)
+    try {
+      const brand = settings?.brand ?? null
+      const base = out.replace(/\.mp4$/i, '')
+      await window.mv.enqueueExport({ project, brand, options: buildExportOptions(project, short, fps, q, out) })
+      if (withShort) {
+        const sp = makeShortVersion(project, { seconds: 15, aspect: shortAspect })
+        await window.mv.enqueueExport({ project: sp, brand, options: buildExportOptions(sp, Math.min(short, 1080), fps, q, `${base}_精华版.mp4`) })
+      }
+      if (withCover) {
+        const blob = await renderCover(project, brand, defaultCoverTime(project))
+        await window.mv.writePng(`${base}_封面.png`, await blob.arrayBuffer())
+      }
+      toast(`已加入导出队列${withShort ? '（含精华版）' : ''}${withCover ? '，封面已保存' : ''}`, 'success')
+      setShowExports(true)
+      onClose()
+    } catch (e) {
+      toast('导出失败：' + (e as Error).message, 'error')
+    } finally {
+      setWorking(false)
+    }
   }
 
   return (
@@ -74,8 +97,8 @@ export function ExportDialog({ project, onClose }: { project: Project; onClose: 
           <button className="btn" onClick={onClose}>
             取消
           </button>
-          <button className="btn primary" onClick={go}>
-            <Download size={15} /> 开始导出
+          <button className="btn primary" disabled={working} onClick={go}>
+            {working ? <Loader2 size={15} className="spin" /> : <Download size={15} />} 开始导出
           </button>
         </>
       }
@@ -111,6 +134,32 @@ export function ExportDialog({ project, onClose }: { project: Project; onClose: 
           onChange={setQ}
         />
         <div className="muted tiny">码率 {(br / 1e6).toFixed(1)} Mbps · H.264 硬件编码 · AAC 192kbps</div>
+      </div>
+      <div className="divider" />
+      <div className="field">
+        <label>同时导出</label>
+        <div className="row" style={{ marginBottom: 8 }}>
+          <Switch on={withShort} onChange={setWithShort} />
+          <span className="grow">15 秒精华版（自动挑高光照片 + 音乐副歌，适合抖音、视频号）</span>
+        </div>
+        {withShort && (
+          <div className="row" style={{ marginBottom: 8, paddingLeft: 42 }}>
+            <span className="tiny muted">画幅</span>
+            <Seg
+              value={shortAspect}
+              options={[
+                { value: '9:16', label: '竖屏 9:16' },
+                { value: '1:1', label: '方形 1:1' },
+                { value: project.aspect, label: `同完整版 ${project.aspect}` }
+              ].filter((o, i, arr) => arr.findIndex((x) => x.value === o.value) === i)}
+              onChange={(v) => setShortAspect(v as Aspect)}
+            />
+          </div>
+        )}
+        <div className="row">
+          <Switch on={withCover} onChange={setWithCover} />
+          <span className="grow">封面图 PNG（片头标题画面）</span>
+        </div>
       </div>
     </Modal>
   )

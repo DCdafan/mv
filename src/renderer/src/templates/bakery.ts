@@ -105,6 +105,7 @@ export function productCard(o: ProductOpt): SceneStyle {
         const iw = x1 - x0 - s * 0.06
         if (o.tag) layers.push(...tagRibbon(c, icx, c.H * 0.24, Math.min(iw, s * 0.5), o.tag.color, o.tag.color2, o.tag.style, o.tag.text))
         layers.push(text('product@0', '', pxc(c, icx, c.H * 0.46, iw, s * 0.32), { ...o.nameStyle, lineHeight: 1.25 }, { type: 'slideUp', delay: 0.4, duration: 0.8 }))
+        layers.push(text('desc@0', '', pxc(c, icx, c.H * 0.585, iw, s * 0.08), { ...o.nameStyle, size: o.nameStyle.size * 0.45, letterSpacing: 0.1 }, { type: 'fade', delay: 0.7, duration: 0.8 }))
         layers.push(...priceBadge(c, 'price@0', icx, c.H * 0.72, s * (o.badge.kind === 'burst' ? 0.28 : 0.3), o.badge))
       } else {
         const m = s * 0.06
@@ -113,8 +114,9 @@ export function productCard(o: ProductOpt): SceneStyle {
         if (o.tag) layers.push(...tagRibbon(c, m + s * 0.24, m + s * 0.07, s * 0.44, o.tag.color, o.tag.color2, o.tag.style, o.tag.text))
         const ny = m + ph + (c.H - m - ph) * (k === 'tall' ? 0.3 : 0.32)
         layers.push(text('product@0', '', pxc(c, c.W / 2, ny, c.W - m * 2, s * 0.26), { ...o.nameStyle, lineHeight: 1.25 }, { type: 'slideUp', delay: 0.4, duration: 0.8 }))
+        layers.push(text('desc@0', '', pxc(c, c.W / 2, ny + s * (o.badge.kind === 'burst' ? 0.11 : 0.09), c.W - m * 2, s * 0.07), { ...o.nameStyle, size: o.nameStyle.size * 0.45, letterSpacing: 0.1 }, { type: 'fade', delay: 0.7, duration: 0.8 }))
         if (o.badge.kind === 'burst') layers.push(...priceBadge(c, 'price@0', c.W - m - s * 0.13, m + ph - s * 0.04, s * 0.3, o.badge))
-        else layers.push(...priceBadge(c, 'price@0', c.W / 2, ny + s * (k === 'tall' ? 0.2 : 0.17), s * 0.32, o.badge))
+        else layers.push(...priceBadge(c, 'price@0', c.W / 2, ny + s * (k === 'tall' ? 0.23 : 0.2), s * 0.32, o.badge))
       }
       if (o.decor) layers.push(...o.decor(c))
       return layers

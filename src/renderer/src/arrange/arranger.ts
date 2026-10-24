@@ -11,6 +11,8 @@ export interface ArrangeInput {
   pace: Pace
   durationMode: 'photos' | 'music'
   seed: number
+  /** 指定音乐起点（用户手动选了高潮段）；不传则自动跳过开头静音 */
+  musicOffset?: number
 }
 
 export interface ArrangeResult {
@@ -80,6 +82,9 @@ function assign(style: SceneStyle, queue: PhotoAsset[], aspect: Aspect): number[
     let found = -1
     for (let i = 0; i < window; i++) {
       if (used.includes(i)) continue
+      const isVideo = queue[i].media === 'video'
+      // 视频素材只放进单图版式
+      if (isVideo && (style.slots.length > 1 || style.needsProduct)) continue
       if (slotAccepts(spec, queue[i], aspect) && (!style.needsProduct || queue[i].product?.price)) {
         found = i
         break
@@ -124,7 +129,7 @@ export function arrange(input: ArrangeInput): ArrangeResult {
   const { template: tpl, aspect, music } = input
   const r = rng(input.seed)
   const photos = input.photos.filter((p) => !p.excluded)
-  const musicOffset = findOffset(music)
+  const musicOffset = input.musicOffset ?? findOffset(music)
   const grid = new BeatGrid(music, musicOffset)
   const P = grid.period
   const pace = input.pace
@@ -186,6 +191,9 @@ export function arrange(input: ArrangeInput): ArrangeResult {
           if (energy < e0 - 0.05 || energy > e1 + 0.05) w *= 0.3
           // 带品名的照片优先放进产品版式（蛋糕店模板）
           if (c.style.needsProduct) w *= 1.8
+          // AI 标记的高光照片和视频片段优先用单图大画面
+          const head = queue[c.idx[0]]
+          if ((head.ai?.highlight || head.media === 'video') && c.style.slots.length === 1) w *= 2.5
           if (recent[recent.length - 1] === c.style.id) w *= 0.08
           else if (recent.includes(c.style.id)) w *= 0.45
           // 多图版式在照片多、节奏快时更常出现
@@ -206,13 +214,21 @@ export function arrange(input: ArrangeInput): ArrangeResult {
 
     const n = chosen.style.slots.length
     const energyFactor = 1.15 - energy * 0.35
-    const target = perPhoto * (n === 1 ? 1 : n * (chosen.style.durationFactor ?? 0.75)) * energyFactor
+    let target = perPhoto * (n === 1 ? 1 : n * (chosen.style.durationFactor ?? 0.75)) * energyFactor
+    const lead = picked[0]
+    if (lead.media === 'video') target = clamp(lead.duration ?? perPhoto, 2, perPhoto * 3)
+    else if (lead.ai?.highlight && n === 1) target *= 1.25
     const trans = pickTransition(tpl, r, prevTrans, P, energy)
     prevTrans = trans.name
     const texts: Record<string, string> = {}
-    if (chosen.style.captionKey && tpl.captions.length && r() < 0.75) {
-      texts.caption = tpl.captions[captionIdx % tpl.captions.length]
-      captionIdx++
+    if (chosen.style.captionKey) {
+      // AI 写的字幕优先，否则用模板文案库
+      const aiCaption = picked.find((p) => p.ai?.caption)?.ai?.caption
+      if (aiCaption) texts.caption = aiCaption
+      else if (tpl.captions.length && r() < 0.75) {
+        texts.caption = tpl.captions[captionIdx % tpl.captions.length]
+        captionIdx++
+      }
     }
     pushScene({ kind: 'photo', styleId: chosen.style.id, photos: picked.map((p) => p.id), transition: trans, texts }, Math.max(1.2, target), n > 1 ? 4 : 2)
   }
@@ -232,6 +248,50 @@ export function retime(scenes: Scene[]): Scene[] {
   return scenes.map((s) => {
     const n = { ...s, start: t }
     t += s.duration
+    return n
+  })
+}
+
+/**
+ * 找音乐里最热闹的一段（副歌）：在能量曲线上滑动窗口，取平均能量最高的起点，
+ * 再对齐到最近的小节第一拍。返回秒。
+ */
+export function findChorus(music: MusicAnalysis, length: number): number {
+  const e = music.energy
+  const step = music.energyStep
+  const win = Math.max(1, Math.round(Math.min(length, music.duration * 0.8) / step))
+  if (e.length <= win) return 0
+  let sum = 0
+  for (let i = 0; i < win; i++) sum += e[i]
+  let best = sum
+  let bestI = 0
+  for (let i = win; i < e.length; i++) {
+    sum += e[i] - e[i - win]
+    if (sum > best + 1e-6) {
+      best = sum
+      bestI = i - win + 1
+    }
+  }
+  const t = bestI * step
+  const db = music.downbeats.filter((d) => d <= t + 0.05)
+  return db.length ? db[db.length - 1] : t
+}
+
+/**
+ * 重新编排后保留用户的手动编辑：贴纸 / 文字、改过的文字内容和样式。
+ * 新旧场景按「首张照片」对应，片头片尾按类型对应。换模板时不保留模板文字的样式（字号位置可能不同）。
+ */
+export function carryEdits(old: Scene[], fresh: Scene[], templateChanged: boolean): Scene[] {
+  const key = (s: Scene): string => (s.kind === 'photo' ? 'p:' + (s.photos[0] ?? '') : s.kind)
+  const map = new Map(old.map((s) => [key(s), s]))
+  return fresh.map((s) => {
+    const o = map.get(key(s))
+    if (!o) return s
+    const n = { ...s }
+    if (o.overlays?.length) n.overlays = o.overlays
+    if (o.texts && Object.keys(o.texts).length) n.texts = { ...s.texts, ...o.texts }
+    if (o.textStyle && !templateChanged) n.textStyle = o.textStyle
+    if (o.focus) n.focus = o.focus
     return n
   })
 }

@@ -1,17 +1,20 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Smile, Sparkles } from 'lucide-react'
+import { StickerPanel } from './StickerPanel'
+import { AIPanel } from './AIPanel'
 import { Images, LayoutTemplate, Music, Diamond, Eye, EyeOff, Check, Shuffle, Locate, ImagePlus, Loader2 } from 'lucide-react'
 import type { Project, MusicTrack } from '@shared/types'
-import { useApp, rearrange, usePlayback } from '../store/app'
+import { useApp, rearrange, usePlayback, presetFromProject, applyPreset, resetPlayhead } from '../store/app'
 import { FLAG_LABEL, importPhotos, type ImportProgress } from '../analysis/photo'
 import { thumbUrl, Seg, fmtTime } from './common'
 import { TemplateCard, MusicList, ImportStatus, ProductLabel } from './Wizard'
 import { TEMPLATES } from '../templates'
 import { TRANSITIONS, transitionLabel } from '../engine/transitions'
-import { pickTransition, arrange, retime } from '../arrange/arranger'
+import { pickTransition, arrange, retime, findChorus } from '../arrange/arranger'
 import { getTemplate } from '../templates'
 import { rng } from '../engine/math'
 
-type Tab = 'photos' | 'templates' | 'music' | 'transitions'
+type Tab = 'photos' | 'templates' | 'music' | 'transitions' | 'stickers' | 'ai'
 
 export function LeftPanel({ project }: { project: Project }): JSX.Element {
   const [tab, setTab] = useState<Tab>('photos')
@@ -19,7 +22,9 @@ export function LeftPanel({ project }: { project: Project }): JSX.Element {
     { id: 'photos', label: '照片', icon: <Images size={16} /> },
     { id: 'templates', label: '模板', icon: <LayoutTemplate size={16} /> },
     { id: 'music', label: '音乐', icon: <Music size={16} /> },
-    { id: 'transitions', label: '转场', icon: <Diamond size={16} /> }
+    { id: 'transitions', label: '转场', icon: <Diamond size={16} /> },
+    { id: 'stickers', label: '贴纸', icon: <Smile size={16} /> },
+    { id: 'ai', label: 'AI', icon: <Sparkles size={16} /> }
   ]
   return (
     <div className="panel">
@@ -36,6 +41,8 @@ export function LeftPanel({ project }: { project: Project }): JSX.Element {
         {tab === 'templates' && <TemplatesTab project={project} />}
         {tab === 'music' && <MusicTab project={project} />}
         {tab === 'transitions' && <TransitionsTab project={project} />}
+        {tab === 'stickers' && <StickerPanel project={project} />}
+        {tab === 'ai' && <AIPanel project={project} />}
       </div>
     </div>
   )
@@ -161,17 +168,18 @@ function PhotoLibrary({ project }: { project: Project }): JSX.Element {
   )
 }
 
-function useRearrange(): [boolean, (patch: Parameters<typeof rearrange>[1], msg?: string) => Promise<void>] {
+function useRearrange(): [boolean, (patch: Parameters<typeof rearrange>[1], msg?: string, offset?: number) => Promise<void>] {
   const [busy, setBusy] = useState(false)
   const { commit, toast } = useApp()
-  const run = async (patch: Parameters<typeof rearrange>[1], msg?: string): Promise<void> => {
-    const cur = useApp.getState().project
+  const run = async (patch: Parameters<typeof rearrange>[1], msg?: string, offset?: number): Promise<void> => {
+    let cur = useApp.getState().project
     if (!cur) return
+    if (offset !== undefined) cur = { ...cur, musicOffset: offset, settings: { ...cur.settings, musicOffsetLocked: true } }
     setBusy(true)
     try {
       const next = await rearrange(cur, patch)
       commit(() => next)
-      usePlayback.setState({ time: 0, playing: false })
+      resetPlayhead()
       if (msg) toast(msg, 'success')
     } catch (e) {
       toast('操作失败：' + (e as Error).message, 'error')
@@ -184,8 +192,65 @@ function useRearrange(): [boolean, (patch: Parameters<typeof rearrange>[1], msg?
 
 function TemplatesTab({ project }: { project: Project }): JSX.Element {
   const [busy, run] = useRearrange()
+  const { settings, saveSettings, commit, toast } = useApp()
+  const custom = settings?.customTemplates ?? []
+  const [naming, setNaming] = useState<string | null>(null)
   return (
     <>
+      <div style={{ padding: 10, borderRadius: 10, background: 'var(--panel-2)', marginBottom: 12 }}>
+        {naming === null ? (
+          <button className="btn sm" style={{ width: '100%' }} onClick={() => setNaming(getTemplate(project.templateId).name + ' · 我的')}>
+            保存当前设置为「我的模板」
+          </button>
+        ) : (
+          <div className="col" style={{ gap: 6 }}>
+            <input className="input" autoFocus value={naming} onChange={(e) => setNaming(e.target.value)} placeholder="模板名称" />
+            <div className="tiny muted">会保存：模板、滤镜、卡点特效、粒子、3D 视差、节奏、画幅、音乐和片头片尾文案</div>
+            <div className="row">
+              <button className="btn sm grow" onClick={() => setNaming(null)}>
+                取消
+              </button>
+              <button
+                className="btn sm primary grow"
+                disabled={!naming.trim()}
+                onClick={async () => {
+                  await saveSettings({ customTemplates: [presetFromProject(project, naming.trim()), ...custom] })
+                  setNaming(null)
+                  toast('已保存到「我的模板」，新建 MV 时可以直接选用', 'success')
+                }}
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+      {custom.length > 0 && (
+        <>
+          <div className="panel-title small">我的模板</div>
+          <div className="col" style={{ gap: 10, marginBottom: 14 }}>
+            {custom.map((c) => (
+              <TemplateCard
+                key={c.id}
+                id={c.baseTemplateId}
+                label={c.name}
+                on={false}
+                compact
+                photos={project.photos}
+                aspect="16:9"
+                onDelete={() => saveSettings({ customTemplates: custom.filter((x) => x.id !== c.id) })}
+                onClick={async () => {
+                  const next = await applyPreset(useApp.getState().project!, c)
+                  commit(() => next)
+                  resetPlayhead()
+                  toast(`已应用「${c.name}」`, 'success')
+                }}
+              />
+            ))}
+          </div>
+          <div className="panel-title small">内置模板</div>
+        </>
+      )}
       <div className="muted small" style={{ marginBottom: 10 }}>
         点击切换模板，照片和文字会保留并重新编排 {busy && <Loader2 size={12} className="spin" />}
       </div>
@@ -233,13 +298,7 @@ function MusicTab({ project }: { project: Project }): JSX.Element {
             <label>结尾淡出 {project.settings.fadeOut.toFixed(1)} 秒</label>
             <input type="range" min={0} max={8} step={0.5} value={project.settings.fadeOut} onChange={(e) => commit((p) => ({ ...p, settings: { ...p.settings, fadeOut: Number(e.target.value) } }), { merge: 'fade' })} />
           </div>
-          {a && (
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label>从第 {fmtTime(project.musicOffset)} 秒开始播放</label>
-              <input type="range" min={0} max={Math.max(0, a.duration - 10)} step={0.5} value={project.musicOffset} onChange={(e) => commit((p) => ({ ...p, musicOffset: Number(e.target.value) }), { merge: 'offset' })} />
-              <div className="tiny muted">修改起点后建议点「重新卡点」</div>
-            </div>
-          )}
+          {a && <MusicSegment project={project} busy={busy} onApply={(offset) => run({}, `已从 ${fmtTime(offset)} 开始重新卡点`, offset)} />}
           <button className="btn sm" style={{ marginTop: 10, width: '100%' }} disabled={busy} onClick={() => run({}, '已按节拍重新编排')}>
             {busy ? <Loader2 size={13} className="spin" /> : <Shuffle size={13} />} 重新卡点
           </button>
@@ -320,5 +379,74 @@ function TransitionsTab({ project }: { project: Project }): JSX.Element {
         </div>
       ))}
     </>
+  )
+}
+
+/** 整首歌的波形：高亮当前用到的片段，点击换起点（对齐小节），或自动选副歌 */
+function MusicSegment({ project, busy, onApply }: { project: Project; busy: boolean; onApply: (offset: number) => void }): JSX.Element {
+  const a = project.music!.analysis!
+  const total = project.scenes.reduce((s, x) => s + x.duration, 0)
+  const ref = useRef<HTMLCanvasElement>(null)
+  const W = 268
+  const H = 56
+  useEffect(() => {
+    const c = ref.current!
+    const dpr = window.devicePixelRatio || 1
+    c.width = W * dpr
+    c.height = H * dpr
+    const g = c.getContext('2d')!
+    g.scale(dpr, dpr)
+    g.clearRect(0, 0, W, H)
+    const x0 = (project.musicOffset / a.duration) * W
+    const x1 = Math.min(W, ((project.musicOffset + total) / a.duration) * W)
+    g.fillStyle = 'rgba(255,138,91,0.16)'
+    g.fillRect(x0, 0, x1 - x0, H)
+    const wf = a.waveform
+    for (let x = 0; x < W; x++) {
+      const v = wf[Math.floor((x / W) * wf.length)] ?? 0
+      const hh = Math.max(1, v * (H - 8))
+      g.fillStyle = x >= x0 && x <= x1 ? 'rgba(255,138,91,0.9)' : 'rgba(255,255,255,0.25)'
+      g.fillRect(x, (H - hh) / 2, 1, hh)
+    }
+    // 能量曲线：高的地方就是副歌
+    g.strokeStyle = 'rgba(255,210,122,0.8)'
+    g.lineWidth = 1.2
+    g.beginPath()
+    a.energy.forEach((e, i) => {
+      const x = (i / a.energy.length) * W
+      const y = H - 3 - e * (H - 10)
+      if (i) g.lineTo(x, y)
+      else g.moveTo(x, y)
+    })
+    g.stroke()
+  }, [project.musicOffset, total, a])
+  const snap = (t: number): number => {
+    const db = a.downbeats.filter((d) => d <= t + 0.01)
+    return db.length ? db[db.length - 1] : 0
+  }
+  const intro = project.scenes[0]?.duration ?? 4
+  return (
+    <div className="field" style={{ marginBottom: 0 }}>
+      <label>
+        使用片段 {fmtTime(project.musicOffset)} – {fmtTime(Math.min(a.duration, project.musicOffset + total))}
+        {project.settings.musicOffsetLocked && <span className="badge accent" style={{ marginLeft: 6 }}>已手动选段</span>}
+      </label>
+      <canvas
+        ref={ref}
+        style={{ width: W, height: H, cursor: 'pointer', borderRadius: 6, background: 'var(--bg-2)' }}
+        title="点击设为起点（自动对齐小节）"
+        onClick={(e) => {
+          if (busy) return
+          const r = (e.target as HTMLCanvasElement).getBoundingClientRect()
+          onApply(snap(((e.clientX - r.left) / r.width) * a.duration))
+        }}
+      />
+      <div className="row" style={{ marginTop: 6 }}>
+        <span className="tiny muted grow">黄线是能量曲线，越高越热闹</span>
+        <button className="btn sm" disabled={busy} onClick={() => onApply(snap(Math.max(0, findChorus(a, Math.min(30, total * 0.6)) - intro)))}>
+          自动选高潮
+        </button>
+      </div>
+    </div>
   )
 }

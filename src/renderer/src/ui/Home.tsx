@@ -4,6 +4,7 @@ import { useApp } from '../store/app'
 import { thumbUrl, fmtTime, Modal, Switch } from './common'
 import { getTemplate, TEMPLATES } from '../templates'
 import { TRANSITIONS } from '../engine/transitions'
+import { AISettingsDialog } from './AISettings'
 import { templateThumb, DEMO_PHOTOS } from './preview'
 
 function timeAgo(t: number): string {
@@ -53,6 +54,29 @@ export function BrandDialog({ onClose }: { onClose: () => void }): JSX.Element {
           <div className="muted tiny">所有模板的片尾都会自动带上店铺名称、口号、地址和电话</div>
         </div>
         <Switch on={b.enabled} onChange={(v) => setB({ ...b, enabled: v })} />
+      </div>
+      <div className="field">
+        <label>Logo（显示在片尾店名上方；开启水印时显示在右下角）</label>
+        <div className="row">
+          <div style={{ width: 64, height: 64, borderRadius: 8, background: b.logoPath ? `center/contain no-repeat ${thumbUrl(b.logoPath)}, var(--bg-2)` : 'var(--bg-2)', border: '1px dashed var(--line-2)' }} />
+          <button
+            className="btn sm"
+            onClick={async () => {
+              const src = await window.mv.openImage()
+              if (!src) return
+              const saved = await window.mv.setLogo(src)
+              if (saved) setB({ ...b, logoPath: saved })
+            }}
+          >
+            上传 Logo
+          </button>
+          {b.logoPath && (
+            <button className="btn sm ghost" onClick={() => setB({ ...b, logoPath: undefined })}>
+              移除
+            </button>
+          )}
+          <span className="tiny muted grow">建议用透明背景的 PNG</span>
+        </div>
       </div>
       <div className="field">
         <label>影楼 / 店铺名称</label>
@@ -121,6 +145,7 @@ function HeroArt(): JSX.Element {
 export function Home(): JSX.Element {
   const { projects, openProject, refreshProjects, setWizardOpen, setView, toast, setShowExports, exports } = useApp()
   const [brand, setBrand] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
   const active = exports.filter((j) => j.status === 'rendering' || j.status === 'queued' || j.status === 'muxing').length
   return (
     <>
@@ -135,6 +160,9 @@ export function Home(): JSX.Element {
         <div className="grow" />
         <button className="btn sm no-drag" onClick={() => setShowExports(true)}>
           <Film size={14} /> 导出队列{active ? ` (${active})` : ''}
+        </button>
+        <button className="btn sm no-drag" onClick={() => setAiOpen(true)}>
+          <Sparkles size={14} /> AI 设置
         </button>
         <button className="btn sm no-drag" onClick={() => setBrand(true)}>
           <Building2 size={14} /> 品牌设置
@@ -246,6 +274,7 @@ export function Home(): JSX.Element {
         )}
       </div>
       {brand && <BrandDialog onClose={() => setBrand(false)} />}
+      {aiOpen && <AISettingsDialog onClose={() => setAiOpen(false)} />}
     </>
   )
 }

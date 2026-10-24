@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Trash2, Copy, Minus, Plus, Crosshair, Settings2, Type, Clock, LayoutGrid, Loader2 } from 'lucide-react'
 import type { Project, Scene } from '@shared/types'
-import { useApp, usePlayback, updateScene, rearrange } from '../store/app'
+import { useApp, usePlayback, updateScene, rearrange, resetPlayhead } from '../store/app'
 import { getTemplate } from '../templates'
 import { findStyle } from '../engine/renderer'
 import { TRANSITIONS, transitionLabel } from '../engine/transitions'
@@ -10,6 +10,8 @@ import { thumbUrl, Switch, Seg, fmtTime } from './common'
 import { AspectPicker } from './Wizard'
 import { FILTERS, BEAT_FX_LABEL, type BeatFx } from '../engine/filters'
 import { styleTextKeys } from '../templates/styles'
+import { OverlayInspector, TextStyleControls } from './OverlayInspector'
+import { ensureMasks } from '../analysis/photo'
 import { autoText, splitKey, TEXT_LABEL } from '../engine/textkeys'
 import type { Pace } from '@shared/types'
 
@@ -46,13 +48,16 @@ function MetaFields({ project }: { project: Project }): JSX.Element {
 
 function ProjectInspector({ project }: { project: Project }): JSX.Element {
   const { commit, toast } = useApp()
+  const [maskBusy, setMaskBusy] = useState<string | null>(null)
+  const withMask = project.photos.filter((x) => x.mask && !x.excluded).length
+  const maskInfo = maskBusy ?? `满屏照片里的人物、宠物会和背景分层移动（已识别 ${withMask} 张）`
   const [busy, setBusy] = useState(false)
   const run = async (patch: Parameters<typeof rearrange>[1], msg: string): Promise<void> => {
     setBusy(true)
     try {
       const next = await rearrange(useApp.getState().project!, patch)
       commit(() => next)
-      usePlayback.setState({ time: 0, playing: false })
+      resetPlayhead()
       toast(msg, 'success')
     } finally {
       setBusy(false)
@@ -112,6 +117,24 @@ function ProjectInspector({ project }: { project: Project }): JSX.Element {
         </select>
         {!project.music && <div className="muted tiny">需要先添加音乐</div>}
       </div>
+      <div className="row" style={{ marginBottom: 10 }}>
+        <div className="grow">
+          <span>人物 / 宠物 3D 视差</span>
+          <div className="muted tiny">{maskInfo}</div>
+        </div>
+        <Switch
+          on={!!project.settings.parallax}
+          onChange={async (v) => {
+            commit((p) => ({ ...p, settings: { ...p.settings, parallax: v } }))
+            if (v && project.photos.some((x) => x.media !== 'video' && !x.mask && x.maskArea === undefined)) {
+              setMaskBusy('正在抠图…')
+              const photos = await ensureMasks(useApp.getState().project!.photos, (d, t) => setMaskBusy(`正在抠图 ${d}/${t}`))
+              commit((p) => ({ ...p, photos }))
+              setMaskBusy(null)
+            }
+          }}
+        />
+      </div>
       <div className="row" style={{ marginBottom: 14 }}>
         <span className="grow">模板粒子特效（花瓣、星光等）</span>
         <Switch on={project.settings.particles} onChange={(v) => commit((p) => ({ ...p, settings: { ...p.settings, particles: v } }))} />
@@ -137,6 +160,8 @@ function SceneInspector({ project, scene }: { project: Project; scene: Scene }):
   const [focusSlot, setFocusSlot] = useState<number | null>(null)
   const isLast = idx === project.scenes.length - 1
   const brand = useApp((s) => s.settings?.brand ?? null)
+  const selectedOverlayId = useApp((s) => s.selectedOverlayId)
+  const selOverlay = scene.overlays?.find((o) => o.id === selectedOverlayId)
   const textKeys = styleTextKeys(style, tpl.palette, tpl.fonts)
   const sameSlotStyles = tpl.styles.filter((s) => s.slots.length === style.slots.length)
   const otherStyles = tpl.styles.filter((s) => s.slots.length !== style.slots.length)
@@ -199,6 +224,19 @@ function SceneInspector({ project, scene }: { project: Project; scene: Scene }):
         </button>
       </div>
 
+      {selOverlay && <OverlayInspector project={project} scene={scene} overlay={selOverlay} />}
+      {(scene.overlays?.length ?? 0) > 0 && !selOverlay && (
+        <div style={{ marginBottom: 12 }}>
+          <div className="panel-title small">贴纸和文字（{scene.overlays!.length}）</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {scene.overlays!.map((o) => (
+              <button key={o.id} className="btn sm" onClick={() => useApp.getState().selectOverlay(scene.id, o.id)}>
+                {o.kind === 'text' ? `「${(o.text ?? '').slice(0, 6)}」` : o.decor}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {scene.kind === 'photo' && (
         <>
           <div className="panel-title small">
@@ -340,6 +378,7 @@ function SceneInspector({ project, scene }: { project: Project; scene: Scene }):
                 ) : (
                   <input className="input" placeholder={base === 'price' ? '例如 ¥128，留空则隐藏价格' : '留空则不显示'} value={val ?? auto} onChange={(e) => upd((s) => ({ ...s, texts: { ...s.texts, [key]: e.target.value } }), 'txt-' + scene.id + key)} />
                 )}
+                <TextStyleControls scene={scene} textKey={key} />
                 {base === 'caption' && (
                   <div className="row" style={{ flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
                     {tpl.captions.slice(0, 6).map((c) => (

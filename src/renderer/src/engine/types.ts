@@ -207,7 +207,12 @@ export interface ParticleLayer extends LayerBase {
   particles: ParticleConfig
 }
 
-export type Layer = BgLayer | PhotoLayer | ShapeLayer | TextLayer | DecorLayer | ParticleLayer
+/** 品牌 Logo 图片（品牌设置里上传），rect.h 为 0 时按图片比例 */
+export interface LogoLayer extends LayerBase {
+  type: 'logo'
+}
+
+export type Layer = BgLayer | PhotoLayer | ShapeLayer | TextLayer | DecorLayer | ParticleLayer | LogoLayer
 
 /** match：与画布同方向；cross：与画布方向相反（方形画布时两者都等于 any） */
 export type SlotSpec = 'landscape' | 'portrait' | 'any' | 'match' | 'cross'

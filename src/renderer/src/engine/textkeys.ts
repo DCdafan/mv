@@ -63,6 +63,8 @@ export function autoText(key: string, scene: Scene, project: Project, brand: Bra
       return photo()?.product?.name ?? ''
     case 'price':
       return formatPrice(photo()?.product?.price)
+    case 'desc':
+      return photo()?.ai?.sellingPoint ?? ''
     case 'caption':
       return ''
   }
@@ -73,8 +75,9 @@ export const TEXT_LABEL: Record<string, string> = {
   caption: '字幕',
   product: '品名',
   price: '价格',
-  tag: '标签'
+  tag: '标签',
+  desc: '卖点'
 }
 
 /** 编辑器里按场景可编辑的文字（片头片尾的标题等走项目信息） */
-export const SCENE_TEXT_KEYS = ['caption', 'product', 'price', 'tag']
+export const SCENE_TEXT_KEYS = ['caption', 'product', 'price', 'tag', 'desc']

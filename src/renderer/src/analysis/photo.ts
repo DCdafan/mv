@@ -4,7 +4,7 @@ import { fileUrl } from '../engine/textures'
 import { strHash } from '../engine/math'
 import { parseProduct } from '../engine/textkeys'
 import exifr from 'exifr'
-import type { FaceLandmarker } from '@mediapipe/tasks-vision'
+import type { FaceLandmarker, ImageSegmenter } from '@mediapipe/tasks-vision'
 
 const PROXY = 2048
 const THUMB = 360
@@ -32,6 +32,133 @@ function getLandmarker(): Promise<FaceLandmarker | null> {
     })()
   }
   return landmarkerP
+}
+
+// ---------- 主体抠图（3D 视差用，本地运行） ----------
+
+let segmenterP: Promise<ImageSegmenter | null> | null = null
+function getSegmenter(): Promise<ImageSegmenter | null> {
+  if (!segmenterP) {
+    segmenterP = (async () => {
+      try {
+        const { FilesetResolver, ImageSegmenter } = await import('@mediapipe/tasks-vision')
+        const fileset = await FilesetResolver.forVisionTasks(new URL('./mediapipe', location.href).toString())
+        return await ImageSegmenter.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: new URL('./models/deeplab_v3.tflite', location.href).toString(), delegate: 'GPU' },
+          runningMode: 'IMAGE',
+          outputCategoryMask: true,
+          outputConfidenceMasks: false
+        })
+      } catch (e) {
+        console.warn('抠图模型加载失败，跳过 3D 视差', e)
+        return null
+      }
+    })()
+  }
+  return segmenterP
+}
+
+// DeepLab（PASCAL VOC）类别里适合做主体的：鸟、猫、牛、狗、马、人、羊
+const SUBJECT = new Set([3, 8, 10, 12, 13, 15, 17])
+
+/** 生成主体蒙版 PNG（白色为主体），主体太小或太大时放弃 */
+async function makeMask(src: ImageBitmap, key: string): Promise<{ path: string; area: number } | null> {
+  const seg = await getSegmenter()
+  if (!seg) return null
+  const s = Math.min(1, 512 / Math.max(src.width, src.height))
+  const c = canvasOf(src.width * s, src.height * s)
+  c.getContext('2d')!.drawImage(src, 0, 0, c.width, c.height)
+  let result
+  try {
+    result = seg.segment(c as unknown as HTMLCanvasElement)
+  } catch (e) {
+    console.warn('抠图失败', e)
+    return null
+  }
+  const cm = result.categoryMask
+  if (!cm) {
+    result.close()
+    return null
+  }
+  const labels = cm.getAsUint8Array()
+  const w = cm.width
+  const h = cm.height
+  const img = new ImageData(w, h)
+  let fg = 0
+  for (let i = 0; i < labels.length; i++) {
+    const on = SUBJECT.has(labels[i])
+    if (on) fg++
+    const v = on ? 255 : 0
+    img.data[i * 4] = v
+    img.data[i * 4 + 1] = v
+    img.data[i * 4 + 2] = v
+    img.data[i * 4 + 3] = 255
+  }
+  result.close()
+  const area = fg / (w * h)
+  if (area < 0.04 || area > 0.7) return null
+  const raw = canvasOf(w, h)
+  raw.getContext('2d')!.putImageData(img, 0, 0)
+  // 边缘羽化，避免主体抠图出现锯齿
+  const out = canvasOf(w, h)
+  const g = out.getContext('2d')!
+  g.filter = `blur(${Math.max(1, Math.round(w / 300))}px)`
+  g.drawImage(raw, 0, 0)
+  const blob = await out.convertToBlob({ type: 'image/png' })
+  const path = await window.mv.cacheWrite(`m-${key}.png`, await blob.arrayBuffer())
+  return { path, area: Math.round(area * 100) / 100 }
+}
+
+/** 给还没有蒙版的照片补做抠图（打开 3D 视差时调用） */
+export async function ensureMasks(photos: PhotoAsset[], onProgress?: (done: number, total: number) => void): Promise<PhotoAsset[]> {
+  const todo = photos.filter((p) => p.media !== 'video' && !p.mask && p.maskArea === undefined)
+  let done = 0
+  const out = new Map<string, PhotoAsset>()
+  for (const p of todo) {
+    try {
+      const res = await fetch(fileUrl(p.proxy ?? p.path))
+      const bmp = await createImageBitmap(await res.blob(), { imageOrientation: 'from-image' })
+      const key = strHash(`${p.path}|mask`).toString(16)
+      const m = await makeMask(bmp, key)
+      bmp.close()
+      out.set(p.id, { ...p, mask: m?.path, maskArea: m?.area ?? 0 })
+    } catch {
+      out.set(p.id, { ...p, maskArea: 0 })
+    }
+    onProgress?.(++done, todo.length)
+  }
+  return photos.map((p) => out.get(p.id) ?? p)
+}
+
+// ---------- 视频素材 ----------
+
+export const VIDEO_RE = /\.(mp4|mov|m4v|webm)$/i
+
+/** 取视频的一帧做封面，并读出时长和尺寸 */
+async function videoFrame(path: string): Promise<{ bmp: ImageBitmap; duration: number }> {
+  const v = document.createElement('video')
+  v.muted = true
+  v.preload = 'auto'
+  v.crossOrigin = 'anonymous'
+  v.src = fileUrl(path)
+  try {
+    await new Promise<void>((resolve, reject) => {
+      v.onloadeddata = () => resolve()
+      v.onerror = () => reject(new Error('视频无法解码（建议使用 H.264 编码的 MP4）'))
+      setTimeout(() => reject(new Error('读取视频超时')), 20000)
+    })
+    const duration = v.duration || 0
+    await new Promise<void>((resolve) => {
+      v.onseeked = () => resolve()
+      v.currentTime = Math.min(1, duration / 3)
+      setTimeout(resolve, 5000)
+    })
+    const bmp = await createImageBitmap(v)
+    return { bmp, duration }
+  } finally {
+    v.removeAttribute('src')
+    v.load()
+  }
 }
 
 function canvasOf(w: number, h: number): OffscreenCanvas {
@@ -172,9 +299,18 @@ async function importOne(path: string, id: string): Promise<RawResult> {
   const name = path.split(/[\\/]/).pop() || path
   const st = await window.mv.stat(path)
   const key = strHash(`${path}|${st.size}|${st.mtimeMs}`).toString(16)
-  const res = await fetch(fileUrl(path))
-  const blob = await res.blob()
-  const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' })
+  const isVideo = VIDEO_RE.test(path)
+  let blob: Blob | null = null
+  let bmp: ImageBitmap
+  let duration: number | undefined
+  if (isVideo) {
+    const f = await videoFrame(path)
+    bmp = f.bmp
+    duration = f.duration
+  } else {
+    blob = await (await fetch(fileUrl(path))).blob()
+    bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' })
+  }
   const width = bmp.width
   const height = bmp.height
 
@@ -185,6 +321,7 @@ async function importOne(path: string, id: string): Promise<RawResult> {
 
   let takenAt: number | undefined
   try {
+    if (!blob) throw new Error('视频没有 EXIF')
     const exif = await exifr.parse(blob, ['DateTimeOriginal', 'CreateDate'])
     const d = exif?.DateTimeOriginal ?? exif?.CreateDate
     if (d instanceof Date && !isNaN(d.getTime())) takenAt = d.getTime()
@@ -206,6 +343,11 @@ async function importOne(path: string, id: string): Promise<RawResult> {
   const total = px.gray.length
   const hash = dHash(bmp)
   const faces = await detectFaces(bmp)
+  let mask: { path: string; area: number } | null = null
+  if (!isVideo) {
+    const cached = await window.mv.cacheExists(`m-${key}.png`)
+    mask = cached ? { path: cached, area: 0.2 } : await makeMask(bmp, key)
+  }
   bmp.close()
 
   const ratio = width / height
@@ -220,7 +362,11 @@ async function importOne(path: string, id: string): Promise<RawResult> {
     takenAt,
     proxy,
     thumb,
-    product: parseProduct(name),
+    product: isVideo ? undefined : parseProduct(name),
+    media: isVideo ? 'video' : undefined,
+    duration,
+    mask: mask?.path,
+    maskArea: mask?.area ?? 0,
     analysis: { sharpness: 0, brightness: bsum / total, faces, hash, score: 0, focus: { x: 0.5, y: 0.45 }, flags: [] }
   }
   return { asset, sharpRaw: sharp, brightness: bsum / total, clipHi: hi / total, clipLo: lo / total, saliency: { x: cx, y: cy } }

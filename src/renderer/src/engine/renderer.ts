@@ -4,12 +4,13 @@ import { FBO, Program, type GL, createTexture } from './gl'
 import { LAYER_VS, LAYER_FS, FULL_VS, POST_FS, COPY_FS, PARTICLE_VS, PARTICLE_FS } from './shaders'
 import { TRANSITION_MAP, transitionFragment } from './transitions'
 import { buildParticleAtlas, simulateParticles } from './particles'
-import { PhotoTextures, CanvasTextures, type TexInfo } from './textures'
+import { PhotoTextures, CanvasTextures, loadImageTexture, type TexInfo, type Entry } from './textures'
+import { overlayToLayer } from './overlays'
 import { rasterizeText, loadFont, isFontLoaded, type TextRaster, type CharBox } from './text'
 import { decorCanvas, DECORS, clearDecorCache } from './decor'
 import { evalLayer, photoUvRect, resolveMotion } from './anim'
 import { clamp, parseColor, strHash, EASE } from './math'
-import type { BgFill, Grade, Layer, MaskType, ParticleConfig, PhotoLayer, SceneStyle, Template, TextLayer } from './types'
+import type { BgFill, Grade, Layer, MaskType, ParticleConfig, PhotoLayer, SceneStyle, Template, TextLayer, TextStyle } from './types'
 import { DEFAULT_GRADE } from './types'
 import { autoText } from './textkeys'
 import { FILTER_MAP } from './filters'
@@ -22,6 +23,8 @@ export interface RendererOptions {
   maxTextureSize: number
   useOriginals: boolean
   preserveDrawingBuffer?: boolean
+  /** 导出模式：视频素材逐帧精确定位 */
+  exact?: boolean
 }
 
 export function findStyle(tpl: Template, id: string): SceneStyle {
@@ -58,9 +61,15 @@ export class Renderer {
   private grade: Grade = DEFAULT_GRADE
   private charBoxes = new Map<string, CharBox[]>()
   private downbeats: number[] = []
+  private logo: { path: string; info?: TexInfo; loading?: Promise<void> } | null = null
+  /** 预览正在播放（视频素材跟着播放，暂停时逐帧定位） */
+  playing = false
   onNeedsRedraw?: () => void
 
+  private exact: boolean
+
   constructor(readonly canvas: HTMLCanvasElement | OffscreenCanvas, private opts: RendererOptions) {
+    this.exact = !!opts.exact
     const gl = canvas.getContext('webgl2', {
       alpha: false,
       antialias: false,
@@ -140,6 +149,21 @@ export class Renderer {
     this.template = template
     this.brand = brand
     this.photoMap = new Map(project.photos.map((p) => [p.id, p]))
+    const logoPath = brand?.enabled ? brand.logoPath : undefined
+    if ((logoPath ?? null) !== (this.logo?.path ?? null)) {
+      if (this.logo?.info) this.gl.deleteTexture(this.logo.info.tex)
+      this.logo = logoPath ? { path: logoPath } : null
+      if (this.logo) {
+        const l = this.logo
+        l.loading = loadImageTexture(this.gl, logoPath!)
+          .then((info) => {
+            if (this.logo === l) l.info = info
+            else this.gl.deleteTexture(info.tex)
+            this.onNeedsRedraw?.()
+          })
+          .catch((e) => console.warn('Logo 加载失败', e))
+      }
+    }
     const f = FILTER_MAP.get(project.settings.filter ?? 'template')
     this.grade = { ...DEFAULT_GRADE, ...(f?.grade ?? template.grade) }
     // 卡点特效用的重拍时间（换算到视频时间轴）
@@ -200,7 +224,30 @@ export class Renderer {
         if (p) jobs.push(this.photos.request(p))
       }
     }
+    if (this.logo?.loading) jobs.push(this.logo.loading)
     return Promise.all(jobs).then(() => undefined)
+  }
+
+  /** 视频素材在某一时刻应该播放到哪 */
+  private videoTime(scene: Scene, lt: number, p: PhotoAsset): number {
+    const d = p.duration ?? 0
+    return Math.max(0, Math.min(lt, Math.max(0, d - 0.05)))
+  }
+
+  /** 导出时逐帧精确定位视频素材 */
+  async prepareExact(t: number, fps: number): Promise<void> {
+    await this.prepare(t, t + 1.5)
+    const { a, b } = this.activeAt(t)
+    const jobs: Promise<void>[] = []
+    for (const i of [a, b]) {
+      const s = this.project?.scenes[i]
+      if (!s) continue
+      for (const id of s.photos) {
+        const p = id ? this.photoMap.get(id) : undefined
+        if (p?.media === 'video') jobs.push(this.photos.seekExact(p, this.videoTime(s, t - s.start, p), 0.5 / fps))
+      }
+    }
+    await Promise.all(jobs)
   }
 
   // ---------- 渲染入口 ----------
@@ -237,7 +284,8 @@ export class Renderer {
     this.drawWatermark()
     // 后期：暗角、颗粒、漏光、整体淡入淡出
     const total = projectDuration(this.project)
-    const fade = Math.max(clamp(1 - t / 0.6), clamp((t - (total - 1.2)) / 1.2))
+    // 开头黑场淡入、结尾淡出；预览暂停时不加，免得停在 0 秒看到一片黑
+    const fade = this.exact || this.playing ? Math.max(clamp(1 - t / 0.6), clamp((t - (total - 1.2)) / 1.2)) : 0
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.viewport(0, 0, this.W, this.H)
     gl.disable(gl.BLEND)
@@ -395,8 +443,27 @@ export class Renderer {
         case 'particles':
           this.drawParticles(layer.particles, lt, st.alpha)
           break
+        case 'logo':
+          this.drawLogo(layer.rect, st)
+          break
       }
     })
+    // 用户自由添加的文字和贴纸
+    for (const o of scene.overlays ?? []) {
+      const layer = overlayToLayer(o, this.W, this.H)
+      const st = evalLayer(layer, lt, scene.duration, this.W, this.H)
+      if (st.alpha <= 0.002) continue
+      if (layer.type === 'text') this.drawText(layer, scene, st, lt)
+      else if (layer.type === 'decor') this.drawDecor(layer.decor, layer.color, layer.color2, layer.rect, st)
+    }
+  }
+
+  private drawLogo(rect: { x: number; y: number; w: number; h: number }, st: ReturnType<typeof evalLayer>): void {
+    const info = this.logo?.info
+    if (!info) return
+    const w = rect.w * this.W
+    const h = rect.h > 0 ? rect.h * this.H : (w * info.h) / info.w
+    this.drawTexQuad(info, rect.x * this.W + w / 2 + st.dx, rect.y * this.H + h / 2 + st.dy, w, h, st, 1)
   }
 
   private geom(rect: { x: number; y: number; w: number; h: number }): { cx: number; cy: number; w: number; h: number } {
@@ -422,6 +489,7 @@ export class Renderer {
   }
 
   private resetLayerUniforms(prog: Program): void {
+    prog.i1('uUseMask', 0).i1('uMaskTex', 1)
     // 未用到贴图时也绑定一张白纹理，避免与当前帧缓冲形成反馈回路
     this.gl.activeTexture(this.gl.TEXTURE0)
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.white)
@@ -535,6 +603,7 @@ export class Renderer {
     const id = scene.photos[layer.slot]
     const photo = id ? this.photoMap.get(id) : undefined
     const e = photo ? this.photos.get(photo) : undefined
+    if (photo && e?.video) this.syncVideo(photo, e, this.videoTime(scene, lt, photo))
     if (photo && e?.photo) {
       const pad = 0.6
       const mp = clamp((lt + pad) / (scene.duration + pad * 2))
@@ -550,18 +619,59 @@ export class Renderer {
         const fy = (layer.rect.y - layer.virtual.y) / layer.virtual.h
         uv = [full[0] + fx * full[2], full[1] + fy * full[3], (layer.rect.w / layer.virtual.w) * full[2], (layer.rect.h / layer.virtual.h) * full[3]]
       } else {
-        uv = photoUvRect(e.photo.w, e.photo.h, g.w, g.h, focus, motion, layer.motionStrength ?? 1, mp)
+        uv = photoUvRect(e.photo.w, e.photo.h, g.w, g.h, focus, motion, (layer.motionStrength ?? 1) * (e.video ? 0.3 : 1), mp)
       }
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, e.photo.tex)
       prog.i1('uMode', 0).f4('uUvRect', ...uv).i1('uGrade', 1)
       this.setGrade(prog, layer.grade)
+      // 3D 视差：背景照常运镜，抠出来的主体再额外放大一点，形成前后景错位
+      const big = g.w * g.h >= this.W * this.H * 0.45
+      if (this.project!.settings.parallax && e.mask && big && !layer.virtual) {
+        this.setGrade(prog, { ...layer.grade, exposure: (layer.grade?.exposure ?? 0) - 0.12 })
+        this.drawQuad()
+        const k = 1 + 0.09 * EASE.inOutSine(mp)
+        // 以主体焦点为中心放大：焦点在画面上的位置保持不动
+        const rx = clamp((focus.x - uv[0]) / uv[2], 0.15, 0.85)
+        const ry = clamp((focus.y - uv[1]) / uv[3], 0.15, 0.85)
+        const fuv: [number, number, number, number] = [focus.x - (rx * uv[2]) / k, focus.y - (ry * uv[3]) / k, uv[2] / k, uv[3] / k]
+        this.setGrade(prog, layer.grade)
+        gl.activeTexture(gl.TEXTURE1)
+        gl.bindTexture(gl.TEXTURE_2D, e.mask.tex)
+        prog.i1('uMaskTex', 1).i1('uUseMask', 1).f4('uUvRect', ...fuv).f1('uBorder', 0)
+        this.drawQuad()
+        prog.i1('uUseMask', 0)
+        gl.bindTexture(gl.TEXTURE_2D, null)
+        gl.activeTexture(gl.TEXTURE0)
+        return
+      }
     } else {
       // 占位：照片还没加载或槽位为空
       const c = parseColor(this.template!.palette.primary)
       prog.i1('uMode', 1).f4('uColor', c[0], c[1], c[2], 0.25).f4('uColor2', c[0], c[1], c[2], 0.12).f1('uGradAngle', 1)
     }
     this.drawQuad()
+  }
+
+  /** 预览时让视频素材跟着时间走：播放中让视频自己播并纠正偏差，暂停时逐帧定位 */
+  private syncVideo(p: PhotoAsset, e: Entry, target: number): void {
+    const v = e.video!
+    if (this.exact) {
+      this.photos.uploadVideo(e)
+      return
+    }
+    if (this.playing) {
+      if (v.paused) v.play().catch(() => {})
+      if (Math.abs(v.currentTime - target) > 0.25) v.currentTime = target
+    } else {
+      if (!v.paused) v.pause()
+      if (Math.abs(v.currentTime - target) > 0.04 && !v.seeking) {
+        v.currentTime = target
+        v.addEventListener('seeked', () => this.onNeedsRedraw?.(), { once: true })
+      }
+    }
+    this.photos.uploadVideo(e)
+    void p
   }
 
   private drawShape(layer: Extract<Layer, { type: 'shape' }>, st: ReturnType<typeof evalLayer>): void {
@@ -613,6 +723,18 @@ export class Renderer {
   private drawText(layer: TextLayer, scene: Scene, st: ReturnType<typeof evalLayer>, lt: number): void {
     const text = this.resolveText(layer, scene)
     if (!text.trim()) return
+    // 编辑器里对这段文字改了字体 / 颜色 / 大小
+    const ov = layer.key ? scene.textStyle?.[layer.key] : undefined
+    if (ov) {
+      const style = { ...layer.style }
+      if (ov.font) style.font = ov.font as TextStyle['font']
+      if (ov.color) {
+        style.color = ov.color
+        style.gradient = undefined
+      }
+      if (ov.scale) style.size = style.size * ov.scale
+      layer = { ...layer, style }
+    }
     const S = Math.min(this.W, this.H)
     const g = this.geom(layer.rect)
     const key = `t|${text}|${JSON.stringify(layer.style)}|${S}|${Math.round(g.w)}`
@@ -760,12 +882,21 @@ export class Renderer {
 
   private drawWatermark(): void {
     const brand = this.brand
-    if (!brand?.enabled || !brand.watermark || !brand.studioName) return
-    this.fboC.bind()
+    if (!brand?.enabled || !brand.watermark) return
     const S = Math.min(this.W, this.H)
+    const margin = S * 0.03
+    if (this.logo?.info) {
+      this.fboC.bind()
+      const info = this.logo.info
+      const h = S * 0.06
+      const w = (h * info.w) / info.h
+      this.drawTexQuad(info, this.W - margin - w / 2, this.H - margin - h / 2, w, h, { sx: 1, sy: 1, rot: 0, alpha: 0.75 }, 1)
+      return
+    }
+    if (!brand.studioName) return
+    this.fboC.bind()
     const style = { font: 'Sans' as const, size: 0.022, color: 'rgba(255,255,255,0.85)', weight: 500, letterSpacing: 0.1, shadow: { color: 'rgba(0,0,0,0.45)', blur: 0.3 } }
     const info = this.canvasTex.get(`wm|${brand.studioName}|${S}`, () => rasterizeText(brand.studioName, style, S, this.W).canvas)
-    const margin = S * 0.03
     this.drawTexQuad(info, this.W - margin - info.w / 2, this.H - margin - info.h / 2, info.w, info.h, { sx: 1, sy: 1, rot: 0, alpha: 0.7 }, 1)
   }
 
